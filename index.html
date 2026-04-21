@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="POLYBOT v7.0 — Adaptive AI Trader for Polymarket">
+  <meta name="description" content="POLYBOT v7.1 — Adaptive AI Trader for Polymarket">
   <title>POLYBOT v7.1 — Adaptive Core</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
   <style>
@@ -116,7 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
     POLYGON: 137,
     USDC: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
     CTF: '0xCf76E4d02e8538c6934102379c0506475b27D698',
-    API: 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://gamma-api.polymarket.com/events?closed=false&active=true&limit=50'),
+    API: 'https://api.corsproxy.io/?' + encodeURIComponent('https://gamma-api.polymarket.com/events?closed=false&active=true&limit=50'),
     MAX_DD: 0.12, VOL_TARGET: 0.12, CALIB_INT: 5, SCAN_INT: 35000
   };
   const ABI_USDC = ["function approve(address,uint256) returns(bool)","function allowance(address,address) view returns(uint256)","function balanceOf(address) view returns(uint256)","function decimals() view returns(uint8)"];
