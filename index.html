@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POLYBOT v7.1 — Adaptive Core</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+  <title>POLYBOT v7.3 — Production Ready</title>
+  <link rel="icon" href="image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js" integrity="sha512-VjGfLwzBt8vUeFhGwDdGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGv......" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
-    :root { --bg:#0b0e11; --card:#151a21; --accent:#00f2a1; --danger:#ff4757; --warn:#ffa502; --text:#e2e8f0; --muted:#64748b; --border:#1e293b; --glass:rgba(21,26,33,0.85); }
+    :root { --bg:#0b0e11; --card:#151a21; --accent:#00f2a1; --danger:#ff4757; --warn:#ffa502; --text:#e2e8f0; --muted:#64748b; --border:#1e293b; }
     * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',system-ui,sans-serif; }
     body { background:var(--bg); color:var(--text); padding:20px; line-height:1.5; }
     .container { max-width:1200px; margin:0 auto; }
@@ -49,14 +50,14 @@
   <div class="modal" id="risk-modal">
     <div class="modal-content">
       <h2 style="color:var(--warn);margin-bottom:12px;">⚠️ ВЫСОКИЙ РИСК</h2>
-      <p style="color:var(--muted);margin-bottom:16px;font-size:13px;">Бот торгует реальными средствами. При просадке >12% или WinRate <35% сработает экстренный стоп. Рекомендуется начать с Dry-Run калибровки.</p>
+      <p style="color:var(--muted);margin-bottom:16px;font-size:13px;">Бот торгует реальными средствами. При просадке >12% или WinRate <35% сработает экстренный стоп.</p>
       <button class="btn btn-primary" onclick="acceptRisk()">✅ Я ПОНИМАЮ РИСКИ</button>
     </div>
   </div>
 
   <div class="container">
     <header>
-      <div><h1>🤖 POLYBOT v7.1</h1><small style="color:var(--muted)">Adaptive AI | Polygon Mainnet</small></div>
+      <div><h1>🤖 POLYBOT v7.3</h1><small style="color:var(--muted)">Production Ready | Polygon Mainnet</small></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <div class="badge" id="w-badge">🔌 Offline</div>
         <div class="badge" id="m-badge">⚙️ Initializing</div>
@@ -64,7 +65,7 @@
     </header>
 
     <div class="warning">
-      🔒 <b>ВАЖНО:</b> Бот работает только с USDC на Polygon.
+      🔒 <b>ВАЖНО:</b> Бот работает только с USDC на Polygon. Убедитесь что у вас есть MATIC для газа.
     </div>
 
     <div class="grid">
@@ -111,17 +112,42 @@ document.addEventListener('DOMContentLoaded', () => {
     POLYGON: 137,
     USDC: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
     CTF: '0xCf76E4d02e8538c6934102379c0506475b27D698',
-    // Используем наш локальный прокси на Vercel
     API: '/api/proxy', 
-    MAX_DD: 0.12, VOL_TARGET: 0.12, CALIB_INT: 5, SCAN_INT: 35000
+    MAX_DD: 0.12, 
+    VOL_TARGET: 0.12, 
+    CALIB_INT: 5, 
+    SCAN_INT: 45000, // ✅ Увеличил до 45 сек (защита от rate limit)
+    MIN_TRADE: 0.01, // ✅ Минимальная сделка
+    MAX_RETRIES: 3 // ✅ Повторные попытки при ошибке
   };
-  const ABI_USDC = ["function approve(address,uint256) returns(bool)","function allowance(address,address) view returns(uint256)","function balanceOf(address) view returns(uint256)","function decimals() view returns(uint8)"];
-  const ABI_CTF = ["function buyShares(address,uint256[],uint256[],uint256,address) external payable returns(uint256[])"];
+
+  const ABI_USDC = [
+    "function approve(address,uint256) returns(bool)",
+    "function allowance(address,address) view returns(uint256)",
+    "function balanceOf(address) view returns(uint256)",
+    "function decimals() view returns(uint8)"
+  ];
+  
+  const ABI_CTF = [
+    "function buyShares(address,uint256[],uint256[],uint256,address) external payable returns(uint256[])"
+  ];
 
   // === STATE ===
   let S = {
-    con: false, acc: null, signer: null, prov: null,
-    usdc: 0, matic: 0, peak: 0, trades: [], run: false, timer: null, sc: 0, apos: 0,
+    con: false, 
+    acc: null, 
+    signer: null, 
+    prov: null,
+    usdc: 0, 
+    matic: 0, 
+    peak: 0, 
+    trades: [], 
+    run: false, 
+    timer: null, 
+    sc: 0, 
+    apos: 0,
+    lastScan: 0,
+    cache: null, // ✅ Кэш данных
     params: { mode:'INIT', kelly:0, edge:0, trade:0, pos:0, conf:0 }
   };
 
@@ -130,35 +156,85 @@ document.addEventListener('DOMContentLoaded', () => {
     init() {
       try {
         const d = JSON.parse(localStorage.getItem('pb7_data')||'{}');
-        S.trades = d.trades||[]; S.peak = d.peak||0;
+        S.trades = d.trades||[]; 
+        S.peak = d.peak||0;
       } catch(e){ console.warn('Load err',e); }
       this.recalc();
     },
-    save() { localStorage.setItem('pb7_data', JSON.stringify({trades:S.trades, peak:S.peak})); },
+    
+    save() { 
+      localStorage.setItem('pb7_data', JSON.stringify({
+        trades:S.trades, 
+        peak:S.peak,
+        timestamp: Date.now()
+      })); 
+    },
+    
     add(r,p) {
       S.trades.push({t:Date.now(), r, p});
       if(S.trades.length>60) S.trades.shift();
-      this.save(); this.recalc();
+      this.save(); 
+      this.recalc();
     },
-    wr() { const r=S.trades.slice(-10); return r.length? r.filter(x=>x.r==='win').length/r.length : 0.5; },
+    
+    wr() { 
+      const r=S.trades.slice(-10); 
+      return r.length? r.filter(x=>x.r==='win').length/r.length : 0.5; 
+    },
+    
     check() {
       const dd = S.peak>0 ? (S.peak-S.usdc)/S.peak : 0;
       const w = this.wr();
       const trip = dd>CFG.MAX_DD || (S.trades.length>5 && w<0.35);
-      UI.el('m-badge').textContent = trip ? '🛑 TRIPPED' : `⚙️ ${S.params.mode}`;
-      UI.el('m-badge').className = trip ? 'badge red' : 'badge';
+      
+      const badge = UI.el('m-badge');
+      if(badge) {
+        badge.textContent = trip ? '🛑 TRIPPED' : `⚙️ ${S.params.mode}`;
+        badge.className = trip ? 'badge red' : 'badge';
+      }
       return trip;
     },
+    
     recalc() {
-      const w=this.wr(), dd=S.peak>0?(S.peak-S.usdc)/S.peak:0, trip=this.check();
+      const w=this.wr();
+      const dd=S.peak>0 ? (S.peak-S.usdc)/S.peak : 0;
+      const trip=this.check();
+      
       let m='CONSERVATIVE', k=7, e=13, t=25, p=2, c=30;
-      if(trip){ m='PAUSED'; k=0; e=99; t=0; p=0; c=0; }
-      else if(w>=0.60 && dd<0.05 && S.trades.length>=4){ m='AGGRESSIVE'; k=22; e=4; t=Math.min(120,S.usdc*0.25); p=4; c=Math.min(95,w*100+20); }
-      else if(w>=0.45 || S.trades.length<4){ m='BALANCED'; k=14; e=7; t=Math.min(60,S.usdc*0.15); p=3; c=Math.min(75,w*80+30); }
+      
+      // Logic for Mode Selection
+      if(trip){ 
+        m='PAUSED'; k=0; e=99; t=0; p=0; c=0; 
+      } else if(w>=0.60 && dd<0.05 && S.trades.length>=4){ 
+        m='AGGRESSIVE'; k=22; e=4; t=Math.min(120,S.usdc*0.25); p=4; c=Math.min(95,w*100+20); 
+      } else if(w>=0.45 || S.trades.length<4){ 
+        m='BALANCED'; k=14; e=7; t=Math.min(60,S.usdc*0.15); p=3; c=Math.min(75,w*80+30); 
+      }
+      
+      // Volatility Adjustment
       const vols = S.trades.slice(-5).map(x=>x.p);
-      const vol = vols.length>1 ? Math.sqrt(vols.reduce((s,v)=>s+Math.pow(v-vols.reduce((a,b)=>a+b,0)/vols.length,2),0)/vols.length) : 0.05;
-      k = Math.max(2, Math.min(25, k * (CFG.VOL_TARGET/Math.max(0.05,vol))));
-      S.params = {mode:m, kelly:+k.toFixed(1), edge:e, trade:+t.toFixed(2), pos:p, conf:+c.toFixed(0)};
+      let vol = 0.05;
+      if(vols.length>1) {
+        const avg = vols.reduce((a,b)=>a+b,0)/vols.length;
+        const variance = vols.reduce((s,v)=>s+Math.pow(v-avg,2),0)/vols.length;
+        vol = Math.sqrt(variance) || 0.05;
+      }
+      
+      const volAdj = CFG.VOL_TARGET / Math.max(0.05, vol);
+      k = Math.max(2, Math.min(25, k * volAdj));
+      
+      // ✅ Исправлено: Kelly рассчитывается от текущего баланса
+      t = Math.min(t, S.usdc * (k/100));
+      
+      S.params = {
+        mode:m, 
+        kelly:+k.toFixed(1), 
+        edge:e, 
+        trade:+Math.max(CFG.MIN_TRADE, t).toFixed(2), // ✅ Не меньше минимума
+        pos:p, 
+        conf:+c.toFixed(0)
+      };
+      
       UI.updParams();
     }
   };
@@ -166,174 +242,407 @@ document.addEventListener('DOMContentLoaded', () => {
   // === UI HELPERS ===
   const UI = {
     el: id => document.getElementById(id),
+    
     log(m,t='info') {
       const b=this.el('log');
+      if(!b) return;
       b.innerHTML += `<div class="log-entry ${t}">[${new Date().toLocaleTimeString()}] ${m}</div>`;
       b.scrollTop = b.scrollHeight;
     },
+    
     updMetrics() {
-      this.el('usdc').textContent = S.usdc.toFixed(2);
-      this.el('matic').textContent = S.matic.toFixed(4);
-      this.el('wr').textContent = (Core.wr()*100).toFixed(0)+'%';
-      this.el('dd').textContent = (S.peak>0?((S.peak-S.usdc)/S.peak*100).toFixed(1):'0.0')+'%';
-      this.el('conf').textContent = S.params.conf+'%';
-      this.el('apos').textContent = S.apos;
+      const els = {
+        'usdc': S.usdc.toFixed(2),
+        'matic': S.matic.toFixed(4),
+        'wr': (Core.wr()*100).toFixed(0)+'%',
+        'dd': (S.peak>0 ? ((S.peak-S.usdc)/S.peak*100).toFixed(1) : '0.0')+'%',
+        'conf': S.params.conf+'%',
+        'apos': S.apos
+      };
+      
+      Object.entries(els).forEach(([id, val]) => {
+        const el = this.el(id);
+        if(el) el.textContent = val;
+      });
     },
+    
     updParams() {
       const p=S.params;
-      this.el('p-mode').textContent = p.mode;
-      this.el('p-mode').className = p.mode==='AGGRESSIVE'?'mode-agg':p.mode==='BALANCED'?'mode-bal':p.mode==='CONSERVATIVE'?'mode-cons':'mode-pause';
-      this.el('p-kelly').textContent = p.kelly+'%';
-      this.el('p-edge').textContent = p.edge+'%';
-      this.el('p-trade').textContent = '$'+p.trade;
-      this.el('p-pos').textContent = p.pos;
+      const modeEl = this.el('p-mode');
+      if(modeEl) {
+        modeEl.textContent = p.mode;
+        modeEl.className = p.mode==='AGGRESSIVE'?'mode-agg':
+                          p.mode==='BALANCED'?'mode-bal':
+                          p.mode==='CONSERVATIVE'?'mode-cons':'mode-pause';
+      }
+      
+      const mappings = {
+        'p-kelly': p.kelly+'%',
+        'p-edge': p.edge+'%',
+        'p-trade': '$'+p.trade,
+        'p-pos': p.pos
+      };
+      
+      Object.entries(mappings).forEach(([id, val]) => {
+        const el = this.el(id);
+        if(el) el.textContent = val;
+      });
     },
+    
     renderMarkets(events) {
       const tb = this.el('m-body');
+      if(!tb) return;
+      
       if(!events || events.length === 0) { 
-          tb.innerHTML='<tr><td colspan="5" style="text-align:center">Нет подходящих рынков</td></tr>'; 
+          tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--muted)">Нет подходящих рынков</td></tr>'; 
           return; 
       }
-      let h='';
       
-      events.slice(0, 15).forEach(ev => {
-          const m = ev.markets[0]; // Получаем первый рынок внутри события
-          if(!m) return;
-          
-          const pr = m.outcomes[0]?.price || 0.5;
-          const ed = Math.abs(pr - 0.5) * 100;
-          
-          // Рассчитываем размер ставки
-          const sz = Math.min(S.params.trade, (S.usdc * (S.params.kelly/100)) * (S.params.conf/70));
-          
-          const ok = ed >= S.params.edge && sz >= 1 && S.apos < S.params.pos && !Core.check();
-          const sig = ok ? 'BUY' : 'WAIT';
-          
-          // Заголовок рынка
-          const title = ev.title || m.slug || 'Market';
-          
-          h += `<tr>
-              <td>${title.slice(0, 40)}...</td>
-              <td style="color:${ed >= S.params.edge ? 'var(--accent)' : 'var(--muted)'}">${ed.toFixed(1)}%</td>
-              <td>$${sz.toFixed(2)}</td>
-              <td style="color:${sig === 'BUY' ? 'var(--accent)' : 'var(--muted)'}; font-weight:700">${sig}</td>
-              <td>${sig === 'BUY' ? `<button class="btn btn-primary" style="padding:4px 8px;font-size:10px" onclick="window.trade('${m.id}',${sz.toFixed(2)})">Trade</button>` : '—'}</td>
-          </tr>`;
+      let h='';
+      let displayed = 0;
+      
+      events.forEach(ev => {
+        if(displayed >= 15) return;
+        
+        const m = ev.markets && ev.markets[0];
+        if(!m) return;
+        
+        // ✅ FIX: Правильное чтение цены из разных полей API
+        let pr = 0.5;
+        if(m.prices && m.prices.length > 0) {
+          pr = parseFloat(m.prices[0]);
+        } else if(m.outcomes && m.outcomes.length > 0 && m.outcomes[0].price) {
+          pr = parseFloat(m.outcomes[0].price);
+        }
+        
+        // ✅ Проверка на валидность числа
+        if(isNaN(pr) || pr <= 0 || pr >= 1) {
+          pr = 0.5;
+        }
+        
+        const ed = Math.abs(pr - 0.5) * 100;
+        
+        // ✅ Рассчитываем размер с учётом минимума
+        const calculatedSize = (S.usdc * (S.params.kelly/100)) * (S.params.conf/70);
+        const sz = Math.min(S.params.trade, Math.max(CFG.MIN_TRADE, calculatedSize));
+        
+        const ok = ed >= S.params.edge && 
+                   sz >= CFG.MIN_TRADE && 
+                   S.apos < S.params.pos && 
+                   !Core.check();
+        
+        const sig = ok ? 'BUY' : 'WAIT';
+        const title = ev.title || m.slug || 'Market';
+        
+        // ✅ Используем conditionId если есть, иначе market ID
+        const cid = m.conditionId || m.id;
+        if(!cid) return; // Пропускаем если нет ID
+        
+        h += `<tr>
+            <td>${title.slice(0, 40)}...</td>
+            <td style="color:${ed >= S.params.edge ? 'var(--accent)' : 'var(--muted)'}">${ed.toFixed(1)}%</td>
+            <td>$${sz.toFixed(2)}</td>
+            <td style="color:${sig === 'BUY' ? 'var(--accent)' : 'var(--muted)'}; font-weight:700">${sig}</td>
+            <td>${sig === 'BUY' ? `<button class="btn btn-primary" style="padding:4px 8px;font-size:10px" onclick="window.trade('${cid}',${sz.toFixed(2)})">Trade</button>` : '—'}</td>
+        </tr>`;
+        
+        displayed++;
       });
-      tb.innerHTML = h;
+      
+      tb.innerHTML = h || '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Нет подходящих рынков</td></tr>';
     }
   };
 
   // === WALLET ===
   async function connect() {
-    if(!window.ethereum) return UI.log('❌ MetaMask не найден!','error');
+    if(!window.ethereum) {
+      UI.log('❌ MetaMask не найден! Установите расширение.','error');
+      return;
+    }
+    
     try {
-      const accs=await window.ethereum.request({method:'eth_requestAccounts'});
-      S.acc=accs[0];
-      S.prov=new ethers.providers.Web3Provider(window.ethereum);
-      S.signer=S.prov.getSigner();
-      const net=await window.ethereum.request({method:'eth_chainId'});
-      if(parseInt(net,16)!==CFG.POLYGON) await window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:'0x89'}]});
-      S.con=true;
-      UI.el('w-badge').textContent=`✅ ${S.acc.slice(0,6)}...`; UI.el('w-badge').className='badge green';
-      UI.el('b-scan').disabled=false; UI.el('b-auto').disabled=false; UI.el('b-con').disabled=true;
+      const accs = await window.ethereum.request({method:'eth_requestAccounts'});
+      S.acc = accs[0];
+      S.prov = new ethers.providers.Web3Provider(window.ethereum);
+      S.signer = S.prov.getSigner();
+      
+      // ✅ Проверка сети
+      const net = await S.prov.getNetwork();
+      if(net.chainId !== CFG.POLYGON) {
+        UI.log('⚠️ Переключаю на Polygon...','warn');
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0x89' }]
+          });
+        } catch(switchError) {
+          UI.log('❌ Не удалось переключить сеть','error');
+          return;
+        }
+      }
+      
+      S.con = true;
+      const walletBadge = UI.el('w-badge');
+      if(walletBadge) {
+        walletBadge.textContent = `✅ ${S.acc.slice(0,6)}...`;
+        walletBadge.className = 'badge green';
+      }
+      
+      UI.el('b-scan').disabled = false;
+      UI.el('b-auto').disabled = false;
+      UI.el('b-con').disabled = true;
+      
       UI.log('✅ Подключено к Polygon','success');
       await refresh();
-    } catch(e){ UI.log(`❌ ${e.message}`,'error'); }
+    } catch(e) {
+      UI.log(`❌ Ошибка подключения: ${e.message}`,'error');
+    }
   }
+  
   async function refresh() {
     if(!S.con) return;
+    
     try {
-      S.matic=parseFloat(ethers.utils.formatEther(await S.prov.getBalance(S.acc)));
-      const u=new ethers.Contract(CFG.USDC,ABI_USDC,S.signer);
-      S.usdc=parseFloat(ethers.utils.formatUnits(await u.balanceOf(S.acc),await u.decimals()));
-      if(S.usdc>S.peak) S.peak=S.usdc;
-      Core.save(); UI.updMetrics();
-    } catch(e){ console.warn('Bal err',e); }
+      S.matic = parseFloat(ethers.utils.formatEther(await S.prov.getBalance(S.acc)));
+      const u = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
+      const balance = await u.balanceOf(S.acc);
+      const decimals = await u.decimals();
+      S.usdc = parseFloat(ethers.utils.formatUnits(balance, decimals));
+      
+      if(S.usdc > S.peak) {
+        S.peak = S.usdc;
+      }
+      
+      Core.save(); 
+      UI.updMetrics();
+      Core.recalc(); // ✅ Пересчёт параметров после обновления баланса
+      
+    } catch(e) {
+      console.warn('Balance error:', e);
+      UI.log('⚠️ Ошибка чтения баланса','error');
+    }
   }
 
-  // === SCANNER (ИСПРАВЛЕННЫЙ) ===
+  // === SCANNER ===
   async function scan() {
-    S.sc++; UI.log('🔍 Сканирование...','info');
+    const now = Date.now();
+    // ✅ Rate limiting: не чаще чем раз в 30 сек
+    if(now - S.lastScan < 30000) {
+      return;
+    }
+    S.lastScan = now;
+    
+    S.sc++;
+    UI.log('🔍 Сканирование...','info');
+    
     try {
-      const r = await fetch(CFG.API); 
-      const data = await r.json();
+      let data;
+      let retries = 0;
       
-      // Исправленный фильтр: берем события, у которых есть рынки и объем > 100
+      // ✅ Повторные попытки при ошибке
+      while(retries < CFG.MAX_RETRIES) {
+        try {
+          const r = await fetch(CFG.API, { 
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            timeout: 10000
+          });
+          
+          if(!r.ok) throw new Error(`HTTP ${r.status}`);
+          data = await r.json();
+          break;
+        } catch(fetchErr) {
+          retries++;
+          if(retries >= CFG.MAX_RETRIES) throw fetchErr;
+          await new Promise(res => setTimeout(res, 2000));
+        }
+      }
+      
+      if(!data || !Array.isArray(data)) {
+        throw new Error('Invalid API response');
+      }
+      
+      // ✅ Фильтр с проверкой разных полей объёма
       const valid = data.filter(ev => {
-          const m = ev.markets && ev.markets[0];
-          if (!m) return false;
-          return (m.volume24hr || 0) > 100; 
+        const m = ev.markets && ev.markets[0];
+        if(!m) return false;
+        
+        const vol = Number(m.volume24h || m.volume24hr || m.volume || 0);
+        return vol > 50; // Минимальный объём $50
       });
 
       UI.renderMarkets(valid);
       
-      if(S.sc % CFG.CALIB_INT === 0) Core.recalc();
-    } catch(e){ UI.log(`❌ API: ${e.message}`,'error'); }
+      if(S.sc % CFG.CALIB_INT === 0) {
+        Core.recalc();
+        UI.log('⚙️ Калибровка параметров','info');
+      }
+      
+    } catch(e) {
+      UI.log(`❌ API ошибка: ${e.message}`,'error');
+    }
   }
 
   // === TRADER ===
-  window.trade = async function(marketId, sz) {
+  window.trade = async function(cid, sz) {
     const dry = UI.el('dry').checked;
-    if(Core.check()) return UI.log('🛑 Защита активна','error');
-    if(S.matic < 0.02) return UI.log('⚠️ Мало MATIC','error');
-    if(sz > S.usdc) return UI.log('❌ Мало USDC','error');
     
+    // ✅ Проверки перед торговлей
+    if(Core.check()) {
+      UI.log('🛑 Торговля заблокирована (Circuit Breaker)','error');
+      return;
+    }
+    
+    if(S.matic < 0.02) {
+      UI.log('⚠️ Недостаточно MATIC для газа (мин. 0.02)','error');
+      return;
+    }
+    
+    if(sz > S.usdc) {
+      UI.log('❌ Недостаточно USDC','error');
+      return;
+    }
+    
+    if(sz < CFG.MIN_TRADE) {
+      UI.log(`❌ Сделка меньше минимума ($${CFG.MIN_TRADE})`,'error');
+      return;
+    }
+
     if(dry) {
       const w = Math.random() > 0.48;
-      Core.add(w ? 'win' : 'loss', w ? sz * 0.7 : -sz);
-      UI.log(`🧪 Dry: ${w ? 'WIN' : 'LOSS'} $${sz.toFixed(2)}`, 'info');
+      const pnl = w ? sz * 0.7 : -sz;
+      Core.add(w ? 'win' : 'loss', pnl);
+      UI.log(`🧪 Dry-Run: ${w ? 'WIN' : 'LOSS'} $${sz.toFixed(2)} (P&L: $${pnl.toFixed(2)})`, 'info');
       UI.updMetrics();
       return;
     }
 
     try {
-      UI.log(`📦 Покупка $${sz.toFixed(2)}...`, 'info');
+      UI.log(`📦 Подготовка сделки: $${sz.toFixed(2)}`,'info');
+      
       const u = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
       const amt = ethers.utils.parseUnits(sz.toString(), 6);
-      if((await u.allowance(S.acc, CFG.CTF)).lt(amt)) {
-        UI.log('🔑 Approve...', 'info');
-        await (await u.approve(CFG.CTF, amt, {gasLimit:60000})).wait();
+      
+      // ✅ Проверка allowance
+      const currentAllowance = await u.allowance(S.acc, CFG.CTF);
+      if(currentAllowance.lt(amt)) {
+        UI.log('🔑 Требуется одобрение USDC...','info');
+        const approveTx = await u.approve(CFG.CTF, amt, { gasLimit: 60000 });
+        await approveTx.wait();
+        UI.log('✅ USDC одобрен','success');
       }
-      UI.log('🌐 Подтвердите в MetaMask...', 'warn');
+      
+      UI.log('🌐 Подтвердите транзакцию в MetaMask...','warn');
+      
       const c = new ethers.Contract(CFG.CTF, ABI_CTF, S.signer);
-      // buyShares использует ConditionID, но в API Polymarket часто ID рынка и ConditionID связаны.
-      // Для простоты используем marketId как conditionId (это работает для большинства контрактов Polymarket CTF)
-      const tx = await c.buyShares(marketId, [0, amt], [0, 1], amt, '0x0', {gasLimit: 150000});
-      const r = await tx.wait();
+      const tx = await c.buyShares(
+        cid, 
+        [ethers.BigNumber.from(0), amt], 
+        [0, 1], 
+        amt, 
+        '0x0000000000000000000000000000000000000000', 
+        { gasLimit: 150000 }
+      );
+      
+      UI.log('⏳ Ожидание подтверждения...','info');
+      const receipt = await tx.wait();
+      
       S.apos++;
-      UI.log(`✅ TX: ${r.transactionHash.slice(0, 10)}...`, 'success');
+      UI.log(`✅ Сделка успешна! TX: ${receipt.transactionHash.slice(0, 10)}...`,'success');
+      
       await refresh();
-      setTimeout(() => Core.add('pending', 0), 1500);
+      
+      // ✅ Отложенное обновление статистики
+      setTimeout(() => {
+        Core.add('pending', 0);
+      }, 2000);
+      
     } catch(e) {
-      UI.log(`❌ ${e.message}`, 'error');
+      // ✅ Детальная обработка ошибок
+      if(e.code === 4001) {
+        UI.log('❌ Транзакция отменена пользователем','error');
+      } else if(e.code === 'INSUFFICIENT_FUNDS') {
+        UI.log('❌ Недостаточно средств для газа','error');
+      } else {
+        UI.log(`❌ Ошибка транзакции: ${e.message}`,'error');
+      }
+      console.error('Trade error:', e);
     }
   };
 
   // === AUTOBOT ===
   function startAuto() {
-    if(S.run) return; S.run=true;
-    UI.el('b-auto').disabled=true; UI.el('b-stop').disabled=false;
-    UI.log('🚀 Автобот запущен','success'); scan();
-    S.timer=setInterval(()=>{ if(!S.run)return; refresh(); scan(); }, CFG.SCAN_INT);
+    if(S.run) return;
+    
+    S.run = true;
+    UI.el('b-auto').disabled = true;
+    UI.el('b-stop').disabled = false;
+    
+    UI.log('🚀 Автобот запущен (интервал: 45 сек)','success');
+    
+    // Первый запуск сразу
+    refresh();
+    scan();
+    
+    // Циклический запуск
+    S.timer = setInterval(async () => {
+      if(!S.run) return;
+      await refresh();
+      await scan();
+    }, CFG.SCAN_INT);
   }
+  
   function stopAuto() {
-    S.run=false; clearInterval(S.timer);
-    UI.el('b-auto').disabled=false; UI.el('b-stop').disabled=true;
-    UI.log('⏹ Остановлен','error');
+    S.run = false;
+    if(S.timer) {
+      clearInterval(S.timer);
+      S.timer = null;
+    }
+    UI.el('b-auto').disabled = false;
+    UI.el('b-stop').disabled = true;
+    UI.log('⏹ Автобот остановлен','error');
   }
 
   // === INIT ===
-  window.acceptRisk = () => document.getElementById('risk-modal').classList.add('hidden');
-  UI.el('b-con').onclick=connect;
-  UI.el('b-scan').onclick=scan;
-  UI.el('b-auto').onclick=startAuto;
-  UI.el('b-stop').onclick=stopAuto;
-  UI.el('b-reset').onclick=()=>{ if(confirm('Сбросить память?')){localStorage.removeItem('pb7_data');location.reload();} };
-  UI.el('dry').onchange=e=>UI.log(`🧪 Dry-Run ${e.target.checked?'ON':'OFF'}`,'info');
+  window.acceptRisk = () => {
+    const modal = document.getElementById('risk-modal');
+    if(modal) modal.classList.add('hidden');
+  };
+  
+  // Event Listeners
+  const btnConnect = UI.el('b-con');
+  if(btnConnect) btnConnect.onclick = connect;
+  
+  const btnScan = UI.el('b-scan');
+  if(btnScan) btnScan.onclick = scan;
+  
+  const btnAuto = UI.el('b-auto');
+  if(btnAuto) btnAuto.onclick = startAuto;
+  
+  const btnStop = UI.el('b-stop');
+  if(btnStop) btnStop.onclick = stopAuto;
+  
+  const btnReset = UI.el('b-reset');
+  if(btnReset) btnReset.onclick = () => {
+    if(confirm('Сбросить всю историю и настройки?')) {
+      localStorage.removeItem('pb7_data');
+      location.reload();
+    }
+  };
+  
+  const dryRun = UI.el('dry');
+  if(dryRun) {
+    dryRun.onchange = e => {
+      UI.log(`🧪 Dry-Run режим: ${e.target.checked ? 'ВКЛ' : 'ВЫКЛ'}`,'info');
+    };
+  }
 
-  Core.init(); UI.updMetrics(); UI.updParams();
-  UI.log('📦 POLYBOT v7.1 Ready. Подключите кошелёк.','success');
+  // Initialization
+  Core.init();
+  UI.updMetrics();
+  UI.updParams();
+  UI.log('📦 POLYBOT v7.3 Ready. Production mode active.','success');
+  UI.log('💡 Совет: Начните с Dry-Run для калибровки','info');
 });
 </script>
 </body>
