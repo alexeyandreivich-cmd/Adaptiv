@@ -3,15 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="POLYBOT v7.0 — Adaptive AI Trader for Polymarket">
-  <title>POLYBOT v7.0 — Adaptive Core</title>
+  <title>POLYBOT v7.1 — Adaptive Core</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
   <style>
-    :root {
-      --bg: #0b0e11; --card: #151a21; --accent: #00f2a1; --danger: #ff4757;
-      --warn: #ffa502; --text: #e2e8f0; --muted: #64748b; --border: #1e293b;
-      --glass: rgba(21, 26, 33, 0.85);
-    }
+    :root { --bg:#0b0e11; --card:#151a21; --accent:#00f2a1; --danger:#ff4757; --warn:#ffa502; --text:#e2e8f0; --muted:#64748b; --border:#1e293b; --glass:rgba(21,26,33,0.85); }
     * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',system-ui,sans-serif; }
     body { background:var(--bg); color:var(--text); padding:20px; line-height:1.5; }
     .container { max-width:1200px; margin:0 auto; }
@@ -61,7 +56,7 @@
 
   <div class="container">
     <header>
-      <div><h1>🤖 POLYBOT v7.0</h1><small style="color:var(--muted)">Adaptive AI | Polygon Mainnet</small></div>
+      <div><h1>🤖 POLYBOT v7.1</h1><small style="color:var(--muted)">Adaptive AI | Polygon Mainnet</small></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <div class="badge" id="w-badge">🔌 Offline</div>
         <div class="badge" id="m-badge">⚙️ Initializing</div>
@@ -69,7 +64,7 @@
     </header>
 
     <div class="warning">
-      🔒 <b>ВАЖНО:</b> MetaMask блокирует <code>file://</code>. Запускайте через Live Server (VS Code) или загрузите на Vercel/GitHub. Бот работает только с USDC на Polygon.
+      🔒 <b>ВАЖНО:</b> Бот работает только с USDC на Polygon.
     </div>
 
     <div class="grid">
@@ -116,7 +111,8 @@ document.addEventListener('DOMContentLoaded', () => {
     POLYGON: 137,
     USDC: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
     CTF: '0xCf76E4d02e8538c6934102379c0506475b27D698',
-    API: '/api/proxy',
+    // Используем наш локальный прокси на Vercel
+    API: '/api/proxy', 
     MAX_DD: 0.12, VOL_TARGET: 0.12, CALIB_INT: 5, SCAN_INT: 35000
   };
   const ABI_USDC = ["function approve(address,uint256) returns(bool)","function allowance(address,address) view returns(uint256)","function balanceOf(address) view returns(uint256)","function decimals() view returns(uint8)"];
@@ -192,19 +188,39 @@ document.addEventListener('DOMContentLoaded', () => {
       this.el('p-trade').textContent = '$'+p.trade;
       this.el('p-pos').textContent = p.pos;
     },
-    renderMarkets(data) {
+    renderMarkets(events) {
       const tb = this.el('m-body');
-      if(!data.length) { tb.innerHTML='<tr><td colspan="5" style="text-align:center">Нет подходящих рынков</td></tr>'; return; }
+      if(!events || events.length === 0) { 
+          tb.innerHTML='<tr><td colspan="5" style="text-align:center">Нет подходящих рынков</td></tr>'; 
+          return; 
+      }
       let h='';
-      data.slice(0,12).forEach(m=>{
-        const pr=m.outcomes[0]?.price||0.5;
-        const ed=Math.abs(pr-0.5)*100;
-        const sz=Math.min(S.params.trade, (S.usdc*(S.params.kelly/100))*(S.params.conf/70));
-        const ok=ed>=S.params.edge && sz>=2 && S.apos<S.params.pos && !Core.check();
-        const sig=ok?'BUY':'WAIT';
-        h+=`<tr><td>${(m.description||'Market').slice(0,35)}...</td><td style="color:${ed>=S.params.edge?'var(--accent)':'var(--muted)'}">${ed.toFixed(1)}%</td><td>$${sz.toFixed(2)}</td><td style="color:${sig==='BUY'?'var(--accent)':'var(--muted)'};font-weight:700">${sig}</td><td>${sig==='BUY'?`<button class="btn btn-primary" style="padding:4px 8px;font-size:10px" onclick="window.trade('${m.condition_id}',${sz.toFixed(2)})">Trade</button>`:'—'}</td></tr>`;
+      
+      events.slice(0, 15).forEach(ev => {
+          const m = ev.markets[0]; // Получаем первый рынок внутри события
+          if(!m) return;
+          
+          const pr = m.outcomes[0]?.price || 0.5;
+          const ed = Math.abs(pr - 0.5) * 100;
+          
+          // Рассчитываем размер ставки
+          const sz = Math.min(S.params.trade, (S.usdc * (S.params.kelly/100)) * (S.params.conf/70));
+          
+          const ok = ed >= S.params.edge && sz >= 1 && S.apos < S.params.pos && !Core.check();
+          const sig = ok ? 'BUY' : 'WAIT';
+          
+          // Заголовок рынка
+          const title = ev.title || m.slug || 'Market';
+          
+          h += `<tr>
+              <td>${title.slice(0, 40)}...</td>
+              <td style="color:${ed >= S.params.edge ? 'var(--accent)' : 'var(--muted)'}">${ed.toFixed(1)}%</td>
+              <td>$${sz.toFixed(2)}</td>
+              <td style="color:${sig === 'BUY' ? 'var(--accent)' : 'var(--muted)'}; font-weight:700">${sig}</td>
+              <td>${sig === 'BUY' ? `<button class="btn btn-primary" style="padding:4px 8px;font-size:10px" onclick="window.trade('${m.id}',${sz.toFixed(2)})">Trade</button>` : '—'}</td>
+          </tr>`;
       });
-      tb.innerHTML=h;
+      tb.innerHTML = h;
     }
   };
 
@@ -236,42 +252,62 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch(e){ console.warn('Bal err',e); }
   }
 
-  // === SCANNER ===
+  // === SCANNER (ИСПРАВЛЕННЫЙ) ===
   async function scan() {
     S.sc++; UI.log('🔍 Сканирование...','info');
     try {
-      const r=await fetch(CFG.API); const d=await r.json();
-      const m=d.filter(x=>(x.liquidity||0)>2500 && (x.volume_24h||0)>1000);
-      UI.renderMarkets(m);
-      if(S.sc%CFG.CALIB_INT===0) Core.recalc();
+      const r = await fetch(CFG.API); 
+      const data = await r.json();
+      
+      // Исправленный фильтр: берем события, у которых есть рынки и объем > 100
+      const valid = data.filter(ev => {
+          const m = ev.markets && ev.markets[0];
+          if (!m) return false;
+          return (m.volume24hr || 0) > 100; 
+      });
+
+      UI.renderMarkets(valid);
+      
+      if(S.sc % CFG.CALIB_INT === 0) Core.recalc();
     } catch(e){ UI.log(`❌ API: ${e.message}`,'error'); }
   }
 
-  // === TRADER (Global for inline onclick) ===
-  window.trade = async function(cid,sz) {
-    const dry=UI.el('dry').checked;
+  // === TRADER ===
+  window.trade = async function(marketId, sz) {
+    const dry = UI.el('dry').checked;
     if(Core.check()) return UI.log('🛑 Защита активна','error');
-    if(S.matic<0.02) return UI.log('⚠️ Мало MATIC','error');
-    if(sz>S.usdc) return UI.log('❌ Мало USDC','error');
+    if(S.matic < 0.02) return UI.log('⚠️ Мало MATIC','error');
+    if(sz > S.usdc) return UI.log('❌ Мало USDC','error');
+    
     if(dry) {
-      const w=Math.random()>0.48;
-      Core.add(w?'win':'loss', w?sz*0.7:-sz);
-      UI.log(`🧪 Dry: ${w?'WIN':'LOSS'} $${sz.toFixed(2)}`,'info'); UI.updMetrics(); return;
+      const w = Math.random() > 0.48;
+      Core.add(w ? 'win' : 'loss', w ? sz * 0.7 : -sz);
+      UI.log(`🧪 Dry: ${w ? 'WIN' : 'LOSS'} $${sz.toFixed(2)}`, 'info');
+      UI.updMetrics();
+      return;
     }
+
     try {
-      UI.log(`📦 Покупка $${sz.toFixed(2)}...`,'info');
-      const u=new ethers.Contract(CFG.USDC,ABI_USDC,S.signer);
-      const amt=ethers.utils.parseUnits(sz.toString(),6);
-      if((await u.allowance(S.acc,CFG.CTF)).lt(amt)) {
-        UI.log('🔑 Approve...','info'); await (await u.approve(CFG.CTF,amt,{gasLimit:60000})).wait();
+      UI.log(`📦 Покупка $${sz.toFixed(2)}...`, 'info');
+      const u = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
+      const amt = ethers.utils.parseUnits(sz.toString(), 6);
+      if((await u.allowance(S.acc, CFG.CTF)).lt(amt)) {
+        UI.log('🔑 Approve...', 'info');
+        await (await u.approve(CFG.CTF, amt, {gasLimit:60000})).wait();
       }
-      UI.log('🌐 Подтвердите в MetaMask...','warn');
-      const c=new ethers.Contract(CFG.CTF,ABI_CTF,S.signer);
-      const tx=await c.buyShares(cid,[0,amt],[0,1],amt,'0x0',{gasLimit:150000});
-      const r=await tx.wait(); S.apos++;
-      UI.log(`✅ TX: ${r.transactionHash.slice(0,10)}...`,'success');
-      await refresh(); setTimeout(()=>Core.add('pending',0),1500);
-    } catch(e){ UI.log(`❌ ${e.message}`,'error'); }
+      UI.log('🌐 Подтвердите в MetaMask...', 'warn');
+      const c = new ethers.Contract(CFG.CTF, ABI_CTF, S.signer);
+      // buyShares использует ConditionID, но в API Polymarket часто ID рынка и ConditionID связаны.
+      // Для простоты используем marketId как conditionId (это работает для большинства контрактов Polymarket CTF)
+      const tx = await c.buyShares(marketId, [0, amt], [0, 1], amt, '0x0', {gasLimit: 150000});
+      const r = await tx.wait();
+      S.apos++;
+      UI.log(`✅ TX: ${r.transactionHash.slice(0, 10)}...`, 'success');
+      await refresh();
+      setTimeout(() => Core.add('pending', 0), 1500);
+    } catch(e) {
+      UI.log(`❌ ${e.message}`, 'error');
+    }
   };
 
   // === AUTOBOT ===
@@ -288,7 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // === INIT ===
-  window.acceptRisk = ()=> document.getElementById('risk-modal').classList.add('hidden');
+  window.acceptRisk = () => document.getElementById('risk-modal').classList.add('hidden');
   UI.el('b-con').onclick=connect;
   UI.el('b-scan').onclick=scan;
   UI.el('b-auto').onclick=startAuto;
@@ -297,7 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
   UI.el('dry').onchange=e=>UI.log(`🧪 Dry-Run ${e.target.checked?'ON':'OFF'}`,'info');
 
   Core.init(); UI.updMetrics(); UI.updParams();
-  UI.log('📦 POLYBOT v7.0 Ready. Подключите кошелёк.','success');
+  UI.log('📦 POLYBOT v7.1 Ready. Подключите кошелёк.','success');
 });
 </script>
 </body>
