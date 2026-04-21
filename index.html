@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="POLYBOT v7.0 — Adaptive AI Trader for Polymarket">
+  <title>POLYBOT v7.0 — Adaptive Core</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0e11; --card: #151a21; --accent: #00f2a1; --danger: #ff4757;
+      --warn: #ffa502; --text: #e2e8f0; --muted: #64748b; --border: #1e293b;
+      --glass: rgba(21, 26, 33, 0.85);
+    }
+    * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',system-ui,sans-serif; }
+    body { background:var(--bg); color:var(--text); padding:20px; line-height:1.5; }
+    .container { max-width:1200px; margin:0 auto; }
+    header { display:flex; justify-content:space-between; align-items:center; padding:16px; background:var(--card); border-radius:14px; margin-bottom:20px; border:1px solid var(--border); flex-wrap:wrap; gap:10px; }
+    h1 { font-size:22px; background:linear-gradient(90deg,var(--accent),#00d9ff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .badge { padding:6px 10px; border-radius:16px; font-size:11px; background:#1e293b; border:1px solid var(--border); display:inline-flex; gap:6px; align-items:center; }
+    .badge.green { border-color:var(--accent); color:var(--accent); }
+    .badge.red { border-color:var(--danger); color:var(--danger); }
+    .card { background:var(--card); padding:16px; border-radius:14px; margin-bottom:16px; border:1px solid var(--border); }
+    .card h3 { margin-bottom:12px; color:var(--accent); font-size:15px; text-transform:uppercase; letter-spacing:0.5px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; }
+    .metric { background:rgba(255,255,255,0.03); padding:10px; border-radius:10px; }
+    .metric span { display:block; color:var(--muted); font-size:11px; margin-bottom:4px; }
+    .metric b { font-size:18px; }
+    .controls { display:flex; gap:10px; flex-wrap:wrap; margin:16px 0; align-items:center; }
+    .btn { padding:10px 16px; border:none; border-radius:10px; font-weight:600; cursor:pointer; transition:0.2s; font-size:13px; display:flex; align-items:center; gap:6px; }
+    .btn:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn-primary { background:var(--accent); color:#000; }
+    .btn-primary:hover:not(:disabled) { box-shadow:0 0 12px rgba(0,242,161,0.4); transform:translateY(-1px); }
+    .btn-danger { background:var(--danger); color:#fff; }
+    .btn-secondary { background:#1e293b; color:var(--text); border:1px solid var(--border); }
+    .toggle { display:flex; align-items:center; gap:8px; margin-left:auto; background:#1e293b; padding:6px 12px; border-radius:16px; }
+    table { width:100%; border-collapse:collapse; font-size:12px; }
+    th,td { padding:10px; text-align:left; border-bottom:1px solid var(--border); }
+    th { color:var(--muted); font-weight:500; }
+    .log-box { background:#0a0c0e; padding:12px; border-radius:10px; height:180px; overflow-y:auto; font-family:monospace; font-size:11px; border:1px solid var(--border); }
+    .log-entry { margin-bottom:4px; padding-left:8px; border-left:3px solid transparent; }
+    .log-entry.info { border-color:#38bdf8; color:#38bdf8; }
+    .log-entry.success { border-color:var(--accent); color:var(--accent); }
+    .log-entry.error { border-color:var(--danger); color:var(--danger); }
+    .warning { background:rgba(255,165,2,0.1); border:1px solid var(--warn); padding:12px; border-radius:10px; margin-bottom:16px; font-size:12px; color:var(--warn); }
+    .modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); display:flex; justify-content:center; align-items:center; z-index:999; }
+    .modal-content { background:var(--card); padding:24px; border-radius:14px; max-width:480px; width:90%; border:1px solid var(--border); text-align:center; }
+    .hidden { display:none!important; }
+    .mode-cons { color:var(--accent); } .mode-bal { color:var(--warn); } .mode-agg { color:var(--danger); } .mode-pause { color:var(--muted); }
+    @media(max-width:768px) { .controls{flex-direction:column;} .toggle{margin-left:0;width:100%;justify-content:center;} .btn{width:100%;justify-content:center;} }
+  </style>
+</head>
+<body>
+  <div class="modal" id="risk-modal">
+    <div class="modal-content">
+      <h2 style="color:var(--warn);margin-bottom:12px;">⚠️ ВЫСОКИЙ РИСК</h2>
+      <p style="color:var(--muted);margin-bottom:16px;font-size:13px;">Бот торгует реальными средствами. При просадке >12% или WinRate <35% сработает экстренный стоп. Рекомендуется начать с Dry-Run калибровки.</p>
+      <button class="btn btn-primary" onclick="acceptRisk()">✅ Я ПОНИМАЮ РИСКИ</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <header>
+      <div><h1>🤖 POLYBOT v7.0</h1><small style="color:var(--muted)">Adaptive AI | Polygon Mainnet</small></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <div class="badge" id="w-badge">🔌 Offline</div>
+        <div class="badge" id="m-badge">⚙️ Initializing</div>
+      </div>
+    </header>
+
+    <div class="warning">
+      🔒 <b>ВАЖНО:</b> MetaMask блокирует <code>file://</code>. Запускайте через Live Server (VS Code) или загрузите на Vercel/GitHub. Бот работает только с USDC на Polygon.
+    </div>
+
+    <div class="grid">
+      <div class="card"><h3>💰 Кошелёк</h3><div class="metric"><span>USDC</span><b id="usdc">0.00</b></div><div class="metric" style="margin-top:8px"><span>MATIC (Gas)</span><b id="matic">0.0000</b></div></div>
+      <div class="card"><h3>📊 Аналитика</h3><div class="metric"><span>Win Rate (10)</span><b id="wr">—</b></div><div class="metric" style="margin-top:8px"><span>Confidence</span><b id="conf">—</b></div></div>
+      <div class="card"><h3>🛡️ Защита</h3><div class="metric"><span>Max Drawdown</span><b id="dd">0.0%</b></div><div class="metric" style="margin-top:8px"><span>Активных</span><b id="apos">0</b></div></div>
+    </div>
+
+    <div class="card">
+      <h3>⚙️ Адаптивные параметры (Live)</h3>
+      <div class="grid">
+        <div class="metric"><span>Режим</span><b id="p-mode">—</b></div>
+        <div class="metric"><span>Kelly %</span><b id="p-kelly">—</b></div>
+        <div class="metric"><span>Min Edge</span><b id="p-edge">—</b></div>
+        <div class="metric"><span>Max Trade $</span><b id="p-trade">—</b></div>
+        <div class="metric"><span>Max Pos</span><b id="p-pos">—</b></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-primary" id="b-con">🔗 Подключить MetaMask</button>
+      <button class="btn btn-secondary" id="b-scan" disabled>🔍 Сканировать</button>
+      <button class="btn btn-primary" id="b-auto" disabled>▶ Автобот</button>
+      <button class="btn btn-danger" id="b-stop" disabled>⏹ Стоп</button>
+      <div class="toggle"><span style="font-size:12px">🧪 Dry-Run</span><input type="checkbox" id="dry" checked></div>
+      <button class="btn btn-secondary" id="b-reset" style="margin-left:auto">🗑 Сброс</button>
+    </div>
+
+    <div class="card">
+      <h3>📈 Рынки</h3>
+      <div style="overflow-x:auto">
+        <table><thead><tr><th>Рынок</th><th>Edge</th><th>Size</th><th>Signal</th><th>Action</th></tr></thead>
+        <tbody id="m-body"><tr><td colspan="5" style="text-align:center;color:var(--muted)">Ожидание подключения...</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <div class="card"><h3>📋 Лог</h3><div class="log-box" id="log"></div></div>
+  </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // === CONFIG ===
+  const CFG = {
+    POLYGON: 137,
+    USDC: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+    CTF: '0xCf76E4d02e8538c6934102379c0506475b27D698',
+    API: 'https://gamma-api.polymarket.com/events?closed=false&active=true&limit=50',
+    MAX_DD: 0.12, VOL_TARGET: 0.12, CALIB_INT: 5, SCAN_INT: 35000
+  };
+  const ABI_USDC = ["function approve(address,uint256) returns(bool)","function allowance(address,address) view returns(uint256)","function balanceOf(address) view returns(uint256)","function decimals() view returns(uint8)"];
+  const ABI_CTF = ["function buyShares(address,uint256[],uint256[],uint256,address) external payable returns(uint256[])"];
+
+  // === STATE ===
+  let S = {
+    con: false, acc: null, signer: null, prov: null,
+    usdc: 0, matic: 0, peak: 0, trades: [], run: false, timer: null, sc: 0, apos: 0,
+    params: { mode:'INIT', kelly:0, edge:0, trade:0, pos:0, conf:0 }
+  };
+
+  // === ADAPTIVE CORE ===
+  const Core = {
+    init() {
+      try {
+        const d = JSON.parse(localStorage.getItem('pb7_data')||'{}');
+        S.trades = d.trades||[]; S.peak = d.peak||0;
+      } catch(e){ console.warn('Load err',e); }
+      this.recalc();
+    },
+    save() { localStorage.setItem('pb7_data', JSON.stringify({trades:S.trades, peak:S.peak})); },
+    add(r,p) {
+      S.trades.push({t:Date.now(), r, p});
+      if(S.trades.length>60) S.trades.shift();
+      this.save(); this.recalc();
+    },
+    wr() { const r=S.trades.slice(-10); return r.length? r.filter(x=>x.r==='win').length/r.length : 0.5; },
+    check() {
+      const dd = S.peak>0 ? (S.peak-S.usdc)/S.peak : 0;
+      const w = this.wr();
+      const trip = dd>CFG.MAX_DD || (S.trades.length>5 && w<0.35);
+      UI.el('m-badge').textContent = trip ? '🛑 TRIPPED' : `⚙️ ${S.params.mode}`;
+      UI.el('m-badge').className = trip ? 'badge red' : 'badge';
+      return trip;
+    },
+    recalc() {
+      const w=this.wr(), dd=S.peak>0?(S.peak-S.usdc)/S.peak:0, trip=this.check();
+      let m='CONSERVATIVE', k=7, e=13, t=25, p=2, c=30;
+      if(trip){ m='PAUSED'; k=0; e=99; t=0; p=0; c=0; }
+      else if(w>=0.60 && dd<0.05 && S.trades.length>=4){ m='AGGRESSIVE'; k=22; e=4; t=Math.min(120,S.usdc*0.25); p=4; c=Math.min(95,w*100+20); }
+      else if(w>=0.45 || S.trades.length<4){ m='BALANCED'; k=14; e=7; t=Math.min(60,S.usdc*0.15); p=3; c=Math.min(75,w*80+30); }
+      const vols = S.trades.slice(-5).map(x=>x.p);
+      const vol = vols.length>1 ? Math.sqrt(vols.reduce((s,v)=>s+Math.pow(v-vols.reduce((a,b)=>a+b,0)/vols.length,2),0)/vols.length) : 0.05;
+      k = Math.max(2, Math.min(25, k * (CFG.VOL_TARGET/Math.max(0.05,vol))));
+      S.params = {mode:m, kelly:+k.toFixed(1), edge:e, trade:+t.toFixed(2), pos:p, conf:+c.toFixed(0)};
+      UI.updParams();
+    }
+  };
+
+  // === UI HELPERS ===
+  const UI = {
+    el: id => document.getElementById(id),
+    log(m,t='info') {
+      const b=this.el('log');
+      b.innerHTML += `<div class="log-entry ${t}">[${new Date().toLocaleTimeString()}] ${m}</div>`;
+      b.scrollTop = b.scrollHeight;
+    },
+    updMetrics() {
+      this.el('usdc').textContent = S.usdc.toFixed(2);
+      this.el('matic').textContent = S.matic.toFixed(4);
+      this.el('wr').textContent = (Core.wr()*100).toFixed(0)+'%';
+      this.el('dd').textContent = (S.peak>0?((S.peak-S.usdc)/S.peak*100).toFixed(1):'0.0')+'%';
+      this.el('conf').textContent = S.params.conf+'%';
+      this.el('apos').textContent = S.apos;
+    },
+    updParams() {
+      const p=S.params;
+      this.el('p-mode').textContent = p.mode;
+      this.el('p-mode').className = p.mode==='AGGRESSIVE'?'mode-agg':p.mode==='BALANCED'?'mode-bal':p.mode==='CONSERVATIVE'?'mode-cons':'mode-pause';
+      this.el('p-kelly').textContent = p.kelly+'%';
+      this.el('p-edge').textContent = p.edge+'%';
+      this.el('p-trade').textContent = '$'+p.trade;
+      this.el('p-pos').textContent = p.pos;
+    },
+    renderMarkets(data) {
+      const tb = this.el('m-body');
+      if(!data.length) { tb.innerHTML='<tr><td colspan="5" style="text-align:center">Нет подходящих рынков</td></tr>'; return; }
+      let h='';
+      data.slice(0,12).forEach(m=>{
+        const pr=m.outcomes[0]?.price||0.5;
+        const ed=Math.abs(pr-0.5)*100;
+        const sz=Math.min(S.params.trade, (S.usdc*(S.params.kelly/100))*(S.params.conf/70));
+        const ok=ed>=S.params.edge && sz>=2 && S.apos<S.params.pos && !Core.check();
+        const sig=ok?'BUY':'WAIT';
+        h+=`<tr><td>${(m.description||'Market').slice(0,35)}...</td><td style="color:${ed>=S.params.edge?'var(--accent)':'var(--muted)'}">${ed.toFixed(1)}%</td><td>$${sz.toFixed(2)}</td><td style="color:${sig==='BUY'?'var(--accent)':'var(--muted)'};font-weight:700">${sig}</td><td>${sig==='BUY'?`<button class="btn btn-primary" style="padding:4px 8px;font-size:10px" onclick="window.trade('${m.condition_id}',${sz.toFixed(2)})">Trade</button>`:'—'}</td></tr>`;
+      });
+      tb.innerHTML=h;
+    }
+  };
+
+  // === WALLET ===
+  async function connect() {
+    if(!window.ethereum) return UI.log('❌ MetaMask не найден!','error');
+    try {
+      const accs=await window.ethereum.request({method:'eth_requestAccounts'});
+      S.acc=accs[0];
+      S.prov=new ethers.providers.Web3Provider(window.ethereum);
+      S.signer=S.prov.getSigner();
+      const net=await window.ethereum.request({method:'eth_chainId'});
+      if(parseInt(net,16)!==CFG.POLYGON) await window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:'0x89'}]});
+      S.con=true;
+      UI.el('w-badge').textContent=`✅ ${S.acc.slice(0,6)}...`; UI.el('w-badge').className='badge green';
+      UI.el('b-scan').disabled=false; UI.el('b-auto').disabled=false; UI.el('b-con').disabled=true;
+      UI.log('✅ Подключено к Polygon','success');
+      await refresh();
+    } catch(e){ UI.log(`❌ ${e.message}`,'error'); }
+  }
+  async function refresh() {
+    if(!S.con) return;
+    try {
+      S.matic=parseFloat(ethers.utils.formatEther(await S.prov.getBalance(S.acc)));
+      const u=new ethers.Contract(CFG.USDC,ABI_USDC,S.signer);
+      S.usdc=parseFloat(ethers.utils.formatUnits(await u.balanceOf(S.acc),await u.decimals()));
+      if(S.usdc>S.peak) S.peak=S.usdc;
+      Core.save(); UI.updMetrics();
+    } catch(e){ console.warn('Bal err',e); }
+  }
+
+  // === SCANNER ===
+  async function scan() {
+    S.sc++; UI.log('🔍 Сканирование...','info');
+    try {
+      const r=await fetch(CFG.API); const d=await r.json();
+      const m=d.filter(x=>(x.liquidity||0)>2500 && (x.volume_24h||0)>1000);
+      UI.renderMarkets(m);
+      if(S.sc%CFG.CALIB_INT===0) Core.recalc();
+    } catch(e){ UI.log(`❌ API: ${e.message}`,'error'); }
+  }
+
+  // === TRADER (Global for inline onclick) ===
+  window.trade = async function(cid,sz) {
+    const dry=UI.el('dry').checked;
+    if(Core.check()) return UI.log('🛑 Защита активна','error');
+    if(S.matic<0.02) return UI.log('⚠️ Мало MATIC','error');
+    if(sz>S.usdc) return UI.log('❌ Мало USDC','error');
+    if(dry) {
+      const w=Math.random()>0.48;
+      Core.add(w?'win':'loss', w?sz*0.7:-sz);
+      UI.log(`🧪 Dry: ${w?'WIN':'LOSS'} $${sz.toFixed(2)}`,'info'); UI.updMetrics(); return;
+    }
+    try {
+      UI.log(`📦 Покупка $${sz.toFixed(2)}...`,'info');
+      const u=new ethers.Contract(CFG.USDC,ABI_USDC,S.signer);
+      const amt=ethers.utils.parseUnits(sz.toString(),6);
+      if((await u.allowance(S.acc,CFG.CTF)).lt(amt)) {
+        UI.log('🔑 Approve...','info'); await (await u.approve(CFG.CTF,amt,{gasLimit:60000})).wait();
+      }
+      UI.log('🌐 Подтвердите в MetaMask...','warn');
+      const c=new ethers.Contract(CFG.CTF,ABI_CTF,S.signer);
+      const tx=await c.buyShares(cid,[0,amt],[0,1],amt,'0x0',{gasLimit:150000});
+      const r=await tx.wait(); S.apos++;
+      UI.log(`✅ TX: ${r.transactionHash.slice(0,10)}...`,'success');
+      await refresh(); setTimeout(()=>Core.add('pending',0),1500);
+    } catch(e){ UI.log(`❌ ${e.message}`,'error'); }
+  };
+
+  // === AUTOBOT ===
+  function startAuto() {
+    if(S.run) return; S.run=true;
+    UI.el('b-auto').disabled=true; UI.el('b-stop').disabled=false;
+    UI.log('🚀 Автобот запущен','success'); scan();
+    S.timer=setInterval(()=>{ if(!S.run)return; refresh(); scan(); }, CFG.SCAN_INT);
+  }
+  function stopAuto() {
+    S.run=false; clearInterval(S.timer);
+    UI.el('b-auto').disabled=false; UI.el('b-stop').disabled=true;
+    UI.log('⏹ Остановлен','error');
+  }
+
+  // === INIT ===
+  window.acceptRisk = ()=> document.getElementById('risk-modal').classList.add('hidden');
+  UI.el('b-con').onclick=connect;
+  UI.el('b-scan').onclick=scan;
+  UI.el('b-auto').onclick=startAuto;
+  UI.el('b-stop').onclick=stopAuto;
+  UI.el('b-reset').onclick=()=>{ if(confirm('Сбросить память?')){localStorage.removeItem('pb7_data');location.reload();} };
+  UI.el('dry').onchange=e=>UI.log(`🧪 Dry-Run ${e.target.checked?'ON':'OFF'}`,'info');
+
+  Core.init(); UI.updMetrics(); UI.updParams();
+  UI.log('📦 POLYBOT v7.0 Ready. Подключите кошелёк.','success');
+});
+</script>
+</body>
+</html>
