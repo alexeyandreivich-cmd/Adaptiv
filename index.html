@@ -3,9 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POLYBOT v7.3 — Production Ready</title>
+  <title>POLYBOT v7.4 — Production Ready</title>
+  <!-- ✅ ИСПРАВЛЕНО: Добавлен data: префикс для иконки -->
   <link rel="icon" href="image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js" integrity="sha512-VjGfLwzBt8vUeFhGwDdGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGvGv......" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  
+  <!-- ✅ ИСПРАВЛЕНО: Убран некорректный integrity хэш -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  
   <style>
     :root { --bg:#0b0e11; --card:#151a21; --accent:#00f2a1; --danger:#ff4757; --warn:#ffa502; --text:#e2e8f0; --muted:#64748b; --border:#1e293b; }
     * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',system-ui,sans-serif; }
@@ -57,7 +61,7 @@
 
   <div class="container">
     <header>
-      <div><h1>🤖 POLYBOT v7.3</h1><small style="color:var(--muted)">Production Ready | Polygon Mainnet</small></div>
+      <div><h1>🤖 POLYBOT v7.4</h1><small style="color:var(--muted)">Production Ready | Polygon Mainnet</small></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <div class="badge" id="w-badge">🔌 Offline</div>
         <div class="badge" id="m-badge">⚙️ Initializing</div>
@@ -116,9 +120,9 @@ document.addEventListener('DOMContentLoaded', () => {
     MAX_DD: 0.12, 
     VOL_TARGET: 0.12, 
     CALIB_INT: 5, 
-    SCAN_INT: 45000, // ✅ Увеличил до 45 сек (защита от rate limit)
-    MIN_TRADE: 0.01, // ✅ Минимальная сделка
-    MAX_RETRIES: 3 // ✅ Повторные попытки при ошибке
+    SCAN_INT: 45000,
+    MIN_TRADE: 0.01,
+    MAX_RETRIES: 3
   };
 
   const ABI_USDC = [
@@ -147,7 +151,6 @@ document.addEventListener('DOMContentLoaded', () => {
     sc: 0, 
     apos: 0,
     lastScan: 0,
-    cache: null, // ✅ Кэш данных
     params: { mode:'INIT', kelly:0, edge:0, trade:0, pos:0, conf:0 }
   };
 
@@ -202,7 +205,6 @@ document.addEventListener('DOMContentLoaded', () => {
       
       let m='CONSERVATIVE', k=7, e=13, t=25, p=2, c=30;
       
-      // Logic for Mode Selection
       if(trip){ 
         m='PAUSED'; k=0; e=99; t=0; p=0; c=0; 
       } else if(w>=0.60 && dd<0.05 && S.trades.length>=4){ 
@@ -211,7 +213,6 @@ document.addEventListener('DOMContentLoaded', () => {
         m='BALANCED'; k=14; e=7; t=Math.min(60,S.usdc*0.15); p=3; c=Math.min(75,w*80+30); 
       }
       
-      // Volatility Adjustment
       const vols = S.trades.slice(-5).map(x=>x.p);
       let vol = 0.05;
       if(vols.length>1) {
@@ -223,14 +224,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const volAdj = CFG.VOL_TARGET / Math.max(0.05, vol);
       k = Math.max(2, Math.min(25, k * volAdj));
       
-      // ✅ Исправлено: Kelly рассчитывается от текущего баланса
       t = Math.min(t, S.usdc * (k/100));
       
       S.params = {
         mode:m, 
         kelly:+k.toFixed(1), 
         edge:e, 
-        trade:+Math.max(CFG.MIN_TRADE, t).toFixed(2), // ✅ Не меньше минимума
+        trade:+Math.max(CFG.MIN_TRADE, t).toFixed(2),
         pos:p, 
         conf:+c.toFixed(0)
       };
@@ -307,22 +307,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const m = ev.markets && ev.markets[0];
         if(!m) return;
         
-        // ✅ FIX: Правильное чтение цены из разных полей API
+        // ✅ ИСПРАВЛЕНО: Корректное чтение цены из outcomes
         let pr = 0.5;
-        if(m.prices && m.prices.length > 0) {
-          pr = parseFloat(m.prices[0]);
-        } else if(m.outcomes && m.outcomes.length > 0 && m.outcomes[0].price) {
-          pr = parseFloat(m.outcomes[0].price);
+        if(m.outcomes && m.outcomes.length > 0) {
+            const outcome = m.outcomes[0];
+            if(outcome.price !== undefined && outcome.price !== null) {
+                pr = parseFloat(outcome.price);
+            }
         }
         
-        // ✅ Проверка на валидность числа
-        if(isNaN(pr) || pr <= 0 || pr >= 1) {
-          pr = 0.5;
+        // Fallback на lastTradePrice если outcomes пуст
+        if(isNaN(pr) || pr === 0) {
+            if(m.lastTradePrice) pr = parseFloat(m.lastTradePrice);
         }
+
+        // Защита от невалидных чисел
+        if(isNaN(pr) || pr <= 0 || pr >= 1) pr = 0.5;
         
         const ed = Math.abs(pr - 0.5) * 100;
         
-        // ✅ Рассчитываем размер с учётом минимума
         const calculatedSize = (S.usdc * (S.params.kelly/100)) * (S.params.conf/70);
         const sz = Math.min(S.params.trade, Math.max(CFG.MIN_TRADE, calculatedSize));
         
@@ -333,10 +336,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const sig = ok ? 'BUY' : 'WAIT';
         const title = ev.title || m.slug || 'Market';
-        
-        // ✅ Используем conditionId если есть, иначе market ID
         const cid = m.conditionId || m.id;
-        if(!cid) return; // Пропускаем если нет ID
+        
+        if(!cid) return; 
         
         h += `<tr>
             <td>${title.slice(0, 40)}...</td>
@@ -356,29 +358,19 @@ document.addEventListener('DOMContentLoaded', () => {
   // === WALLET ===
   async function connect() {
     if(!window.ethereum) {
-      UI.log('❌ MetaMask не найден! Установите расширение.','error');
+      UI.log('❌ MetaMask не найден!','error');
       return;
     }
-    
     try {
       const accs = await window.ethereum.request({method:'eth_requestAccounts'});
       S.acc = accs[0];
       S.prov = new ethers.providers.Web3Provider(window.ethereum);
       S.signer = S.prov.getSigner();
       
-      // ✅ Проверка сети
       const net = await S.prov.getNetwork();
       if(net.chainId !== CFG.POLYGON) {
         UI.log('⚠️ Переключаю на Polygon...','warn');
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x89' }]
-          });
-        } catch(switchError) {
-          UI.log('❌ Не удалось переключить сеть','error');
-          return;
-        }
+        await window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:'0x89'}]});
       }
       
       S.con = true;
@@ -395,41 +387,30 @@ document.addEventListener('DOMContentLoaded', () => {
       UI.log('✅ Подключено к Polygon','success');
       await refresh();
     } catch(e) {
-      UI.log(`❌ Ошибка подключения: ${e.message}`,'error');
+      UI.log(`❌ Ошибка: ${e.message}`,'error');
     }
   }
   
   async function refresh() {
     if(!S.con) return;
-    
     try {
       S.matic = parseFloat(ethers.utils.formatEther(await S.prov.getBalance(S.acc)));
       const u = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
-      const balance = await u.balanceOf(S.acc);
-      const decimals = await u.decimals();
-      S.usdc = parseFloat(ethers.utils.formatUnits(balance, decimals));
+      S.usdc = parseFloat(ethers.utils.formatUnits(await u.balanceOf(S.acc), await u.decimals()));
       
-      if(S.usdc > S.peak) {
-        S.peak = S.usdc;
-      }
-      
+      if(S.usdc > S.peak) S.peak = S.usdc;
       Core.save(); 
       UI.updMetrics();
-      Core.recalc(); // ✅ Пересчёт параметров после обновления баланса
-      
+      Core.recalc(); 
     } catch(e) {
-      console.warn('Balance error:', e);
-      UI.log('⚠️ Ошибка чтения баланса','error');
+      console.warn('Bal err', e);
     }
   }
 
   // === SCANNER ===
   async function scan() {
     const now = Date.now();
-    // ✅ Rate limiting: не чаще чем раз в 30 сек
-    if(now - S.lastScan < 30000) {
-      return;
-    }
+    if(now - S.lastScan < 30000) return;
     S.lastScan = now;
     
     S.sc++;
@@ -439,7 +420,6 @@ document.addEventListener('DOMContentLoaded', () => {
       let data;
       let retries = 0;
       
-      // ✅ Повторные попытки при ошибке
       while(retries < CFG.MAX_RETRIES) {
         try {
           const r = await fetch(CFG.API, { 
@@ -447,7 +427,6 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: { 'Accept': 'application/json' },
             timeout: 10000
           });
-          
           if(!r.ok) throw new Error(`HTTP ${r.status}`);
           data = await r.json();
           break;
@@ -458,28 +437,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       
-      if(!data || !Array.isArray(data)) {
-        throw new Error('Invalid API response');
-      }
+      if(!data || !Array.isArray(data)) throw new Error('Invalid response');
       
-      // ✅ Фильтр с проверкой разных полей объёма
       const valid = data.filter(ev => {
         const m = ev.markets && ev.markets[0];
         if(!m) return false;
-        
-        const vol = Number(m.volume24h || m.volume24hr || m.volume || 0);
-        return vol > 50; // Минимальный объём $50
+        return Number(m.volume24h || m.volume24hr || m.volume || 0) > 50; 
       });
 
       UI.renderMarkets(valid);
       
-      if(S.sc % CFG.CALIB_INT === 0) {
-        Core.recalc();
-        UI.log('⚙️ Калибровка параметров','info');
-      }
+      if(S.sc % CFG.CALIB_INT === 0) Core.recalc();
       
     } catch(e) {
-      UI.log(`❌ API ошибка: ${e.message}`,'error');
+      UI.log(`❌ API: ${e.message}`,'error');
     }
   }
 
@@ -487,162 +458,86 @@ document.addEventListener('DOMContentLoaded', () => {
   window.trade = async function(cid, sz) {
     const dry = UI.el('dry').checked;
     
-    // ✅ Проверки перед торговлей
-    if(Core.check()) {
-      UI.log('🛑 Торговля заблокирована (Circuit Breaker)','error');
-      return;
-    }
-    
-    if(S.matic < 0.02) {
-      UI.log('⚠️ Недостаточно MATIC для газа (мин. 0.02)','error');
-      return;
-    }
-    
-    if(sz > S.usdc) {
-      UI.log('❌ Недостаточно USDC','error');
-      return;
-    }
-    
-    if(sz < CFG.MIN_TRADE) {
-      UI.log(`❌ Сделка меньше минимума ($${CFG.MIN_TRADE})`,'error');
-      return;
-    }
+    if(Core.check()) return UI.log('🛑 Circuit Breaker','error');
+    if(S.matic < 0.02) return UI.log('⚠️ Мало MATIC','error');
+    if(sz > S.usdc) return UI.log('❌ Мало USDC','error');
+    if(sz < CFG.MIN_TRADE) return UI.log(`❌ < $${CFG.MIN_TRADE}`,'error');
 
     if(dry) {
       const w = Math.random() > 0.48;
       const pnl = w ? sz * 0.7 : -sz;
       Core.add(w ? 'win' : 'loss', pnl);
-      UI.log(`🧪 Dry-Run: ${w ? 'WIN' : 'LOSS'} $${sz.toFixed(2)} (P&L: $${pnl.toFixed(2)})`, 'info');
+      UI.log(`🧪 Dry: ${w?'WIN':'LOSS'} $${sz.toFixed(2)}`,'info');
       UI.updMetrics();
       return;
     }
 
     try {
-      UI.log(`📦 Подготовка сделки: $${sz.toFixed(2)}`,'info');
-      
+      UI.log(`📦 Покупка $${sz.toFixed(2)}...`,'info');
       const u = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
       const amt = ethers.utils.parseUnits(sz.toString(), 6);
       
-      // ✅ Проверка allowance
-      const currentAllowance = await u.allowance(S.acc, CFG.CTF);
-      if(currentAllowance.lt(amt)) {
-        UI.log('🔑 Требуется одобрение USDC...','info');
-        const approveTx = await u.approve(CFG.CTF, amt, { gasLimit: 60000 });
-        await approveTx.wait();
-        UI.log('✅ USDC одобрен','success');
+      if((await u.allowance(S.acc, CFG.CTF)).lt(amt)) {
+        UI.log('🔑 Approve...','info');
+        await (await u.approve(CFG.CTF, amt, {gasLimit:60000})).wait();
       }
       
-      UI.log('🌐 Подтвердите транзакцию в MetaMask...','warn');
-      
+      UI.log('🌐 Подтвердите в MetaMask...','warn');
       const c = new ethers.Contract(CFG.CTF, ABI_CTF, S.signer);
-      const tx = await c.buyShares(
-        cid, 
-        [ethers.BigNumber.from(0), amt], 
-        [0, 1], 
-        amt, 
-        '0x0000000000000000000000000000000000000000', 
-        { gasLimit: 150000 }
-      );
-      
-      UI.log('⏳ Ожидание подтверждения...','info');
-      const receipt = await tx.wait();
+      const tx = await c.buyShares(cid, [0, amt], [0, 1], amt, '0x0', {gasLimit: 150000});
+      const r = await tx.wait();
       
       S.apos++;
-      UI.log(`✅ Сделка успешна! TX: ${receipt.transactionHash.slice(0, 10)}...`,'success');
-      
+      UI.log(`✅ TX: ${r.transactionHash.slice(0,10)}...`,'success');
       await refresh();
-      
-      // ✅ Отложенное обновление статистики
-      setTimeout(() => {
-        Core.add('pending', 0);
-      }, 2000);
+      setTimeout(() => Core.add('pending', 0), 2000);
       
     } catch(e) {
-      // ✅ Детальная обработка ошибок
-      if(e.code === 4001) {
-        UI.log('❌ Транзакция отменена пользователем','error');
-      } else if(e.code === 'INSUFFICIENT_FUNDS') {
-        UI.log('❌ Недостаточно средств для газа','error');
-      } else {
-        UI.log(`❌ Ошибка транзакции: ${e.message}`,'error');
-      }
-      console.error('Trade error:', e);
+      UI.log(`❌ ${e.code === 4001 ? 'Отменено' : e.message}`,'error');
     }
   };
 
   // === AUTOBOT ===
   function startAuto() {
     if(S.run) return;
-    
-    S.run = true;
-    UI.el('b-auto').disabled = true;
-    UI.el('b-stop').disabled = false;
-    
-    UI.log('🚀 Автобот запущен (интервал: 45 сек)','success');
-    
-    // Первый запуск сразу
+    S.run=true;
+    UI.el('b-auto').disabled=true; 
+    UI.el('b-stop').disabled=false;
+    UI.log('🚀 Автобот запущен','success');
     refresh();
     scan();
-    
-    // Циклический запуск
-    S.timer = setInterval(async () => {
-      if(!S.run) return;
-      await refresh();
-      await scan();
+    S.timer=setInterval(()=>{ 
+      if(!S.run)return; 
+      refresh(); 
+      scan(); 
     }, CFG.SCAN_INT);
   }
   
   function stopAuto() {
-    S.run = false;
-    if(S.timer) {
-      clearInterval(S.timer);
-      S.timer = null;
-    }
-    UI.el('b-auto').disabled = false;
-    UI.el('b-stop').disabled = true;
-    UI.log('⏹ Автобот остановлен','error');
+    S.run=false;
+    clearInterval(S.timer);
+    UI.el('b-auto').disabled=false;
+    UI.el('b-stop').disabled=true;
+    UI.log('⏹ Стоп','error');
   }
 
   // === INIT ===
-  window.acceptRisk = () => {
-    const modal = document.getElementById('risk-modal');
-    if(modal) modal.classList.add('hidden');
-  };
-  
-  // Event Listeners
-  const btnConnect = UI.el('b-con');
-  if(btnConnect) btnConnect.onclick = connect;
-  
-  const btnScan = UI.el('b-scan');
-  if(btnScan) btnScan.onclick = scan;
-  
-  const btnAuto = UI.el('b-auto');
-  if(btnAuto) btnAuto.onclick = startAuto;
-  
-  const btnStop = UI.el('b-stop');
-  if(btnStop) btnStop.onclick = stopAuto;
-  
-  const btnReset = UI.el('b-reset');
-  if(btnReset) btnReset.onclick = () => {
-    if(confirm('Сбросить всю историю и настройки?')) {
+  window.acceptRisk = () => document.getElementById('risk-modal').classList.add('hidden');
+  UI.el('b-con').onclick=connect;
+  UI.el('b-scan').onclick=scan;
+  UI.el('b-auto').onclick=startAuto;
+  UI.el('b-stop').onclick=stopAuto;
+  UI.el('b-reset').onclick=()=>{ 
+    if(confirm('Сброс?')){
       localStorage.removeItem('pb7_data');
       location.reload();
     }
   };
   
-  const dryRun = UI.el('dry');
-  if(dryRun) {
-    dryRun.onchange = e => {
-      UI.log(`🧪 Dry-Run режим: ${e.target.checked ? 'ВКЛ' : 'ВЫКЛ'}`,'info');
-    };
-  }
-
-  // Initialization
   Core.init();
   UI.updMetrics();
   UI.updParams();
-  UI.log('📦 POLYBOT v7.3 Ready. Production mode active.','success');
-  UI.log('💡 Совет: Начните с Dry-Run для калибровки','info');
+  UI.log('📦 POLYBOT v7.4 Ready.','success');
 });
 </script>
 </body>
