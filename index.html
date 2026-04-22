@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POLYBOT v7.7.1 — Checksum Fixed</title>
+  <title>POLYBOT v7.7.2 — BigNumber Fixed</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     :root { --bg:#0b0e11; --card:#151a21; --accent:#00f2a1; --danger:#ff4757; --warn:#ffa502; --text:#e2e8f0; --muted:#64748b; --border:#1e293b; }
@@ -59,7 +59,7 @@
 
   <div class="container">
     <header>
-      <div><h1>🤖 POLYBOT v7.7.1</h1><small style="color:var(--muted)">Checksum Fixed | Polygon</small></div>
+      <div><h1>🤖 POLYBOT v7.7.2</h1><small style="color:var(--muted)">BigNumber Fixed | Polygon</small></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <div class="badge" id="w-badge">🔌 Offline</div>
         <div class="badge" id="m-badge">⚙️ Initializing</div>
@@ -113,11 +113,10 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  // ✅ FIX: Адреса в нижнем регистре (без checksum)
   const CFG = {
     POLYGON: 137,
-    USDC: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', // lowercase
-    CTF: '0xc5d563a36ae78145c45a50134d48a1215220f800', // lowercase
+    USDC: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
+    CTF: '0xc5d563a36ae78145c45a50134d48a1215220f800',
     API: '/api/proxy', 
     MAX_DD: 0.12, 
     VOL_TARGET: 0.12, 
@@ -316,37 +315,69 @@ document.addEventListener('DOMContentLoaded', () => {
     const dry = UI.el('dry').checked;
     const sideName = outcomeId === 1 ? 'YES' : 'NO';
     
+    if(!cid || !sz || sz <= 0) {
+      return UI.log(`❌ Ошибка: cid=${cid}, size=${sz}`,'error');
+    }
+    
     if(Core.check()) return UI.log('🛑 Circuit Breaker','error');
     if(S.matic < CFG.MIN_MATIC) return UI.log(`⚠️ Мало POL/MATIC`,'error');
     if(sz > S.usdc) return UI.log('❌ Мало USDC','error');
+    
     if(dry) {
-      const w = Math.random() > 0.48; Core.add(w?'win':'loss', w?sz*0.7:-sz);
-      UI.log(`🧪 Dry: ${sideName} ${w?'WIN':'LOSS'} $${sz.toFixed(2)}`,'info'); UI.updMetrics(); return;
+      const w = Math.random() > 0.48; 
+      Core.add(w?'win':'loss', w?sz*0.7:-sz);
+      UI.log(`🧪 Dry: ${sideName} ${w?'WIN':'LOSS'} $${sz.toFixed(2)}`,'info'); 
+      UI.updMetrics(); 
+      return;
     }
+    
     try {
       UI.log(`📦 Покупка ${sideName} $${sz.toFixed(2)}...`,'info');
+      
       const u = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
       const amt = ethers.utils.parseUnits(sz.toString(), 6);
-      if((await u.allowance(S.acc, CFG.CTF)).lt(amt)) {
+      
+      const currentAllowance = await u.allowance(S.acc, CFG.CTF);
+      if(currentAllowance.lt(amt)) {
         UI.log('🔑 Approve USDC...','info'); 
-        const txApprove = await u.approve(CFG.CTF, amt, {gasLimit:60000});
+        const txApprove = await u.approve(CFG.CTF, ethers.constants.MaxUint256, {gasLimit:60000});
         await txApprove.wait();
         UI.log('✅ USDC Approved','success');
       }
+      
       UI.log('🌐 Подтвердите в MetaMask...','warn');
+      
       const c = new ethers.Contract(CFG.CTF, ABI_CTF, S.signer);
-      const amounts = outcomeId === 1 ? [ethers.constants.Zero, amt] : [amt, ethers.constants.Zero];
-      const ids = [ethers.constants.Zero, ethers.BigNumber.from(1)];
-      const tx = await c.buyShares(cid, amounts, ids, amt, ethers.constants.AddressZero, {gasLimit: 250000});
+      
+      const zero = ethers.BigNumber.from(0);
+      const one = ethers.BigNumber.from(1);
+      const amounts = outcomeId === 1 ? [zero, amt] : [amt, zero];
+      const ids = [zero, one];
+      const investment = amt;
+      const referrer = '0x0000000000000000000000000000000000000000';
+      
+      UI.log(`📋 Params: cid=${cid}, amounts=[${amounts[0].toString()},${amounts[1].toString()}]`,'info');
+      
+      const tx = await c.buyShares(
+        cid, 
+        amounts, 
+        ids, 
+        investment, 
+        referrer, 
+        {gasLimit: 300000}
+      );
+      
       UI.log('⏳ Ожидание подтверждения...','info');
       const r = await tx.wait(); 
       S.apos++;
       UI.log(`✅ TX: ${r.transactionHash.slice(0,10)}...`,'success'); 
       await refresh();
       setTimeout(() => Core.add('pending',0), 2000);
+      
     } catch(e) { 
       let msg = e.reason || e.message || 'Неизвестная ошибка';
       if(e.code === 4001) msg = 'Отменено пользователем';
+      else if(e.data && e.data.message) msg = e.data.message;
       UI.log(`❌ ${msg}`,'error'); 
       console.error('Trade Error:', e);
     }
@@ -358,7 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.acceptRisk = () => document.getElementById('risk-modal').classList.add('hidden');
   UI.el('b-con').onclick=connect; UI.el('b-scan').onclick=scan; UI.el('b-auto').onclick=startAuto; UI.el('b-stop').onclick=stopAuto;
   UI.el('b-reset').onclick=()=>{ if(confirm('Сброс?')){localStorage.removeItem('pb7_data');location.reload();} };
-  Core.init(); UI.updMetrics(); UI.updParams(); UI.log('📦 POLYBOT v7.7.1 Ready.','success');
+  Core.init(); UI.updMetrics(); UI.updParams(); UI.log('📦 POLYBOT v7.7.2 Ready.','success');
 });
 </script>
 </body>
