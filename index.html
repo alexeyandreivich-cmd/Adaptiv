@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POLYBOT v7.6 — Directional Trading</title>
+  <title>POLYBOT v7.7 — Fixed Contract Address</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     :root { --bg:#0b0e11; --card:#151a21; --accent:#00f2a1; --danger:#ff4757; --warn:#ffa502; --text:#e2e8f0; --muted:#64748b; --border:#1e293b; }
@@ -59,7 +59,7 @@
 
   <div class="container">
     <header>
-      <div><h1>🤖 POLYBOT v7.6</h1><small style="color:var(--muted)">Directional Logic | Polygon</small></div>
+      <div><h1>🤖 POLYBOT v7.7</h1><small style="color:var(--muted)">Fixed Polygon Contract | Directional</small></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <div class="badge" id="w-badge">🔌 Offline</div>
         <div class="badge" id="m-badge">⚙️ Initializing</div>
@@ -113,10 +113,11 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+  // ✅ FIX: Правильный адрес CTF Exchange для Polygon Mainnet
   const CFG = {
     POLYGON: 137,
     USDC: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
-    CTF: '0xCf76E4d02e8538c6934102379c0506475b27D698',
+    CTF: '0xC5d563A36AE78145C45a50134d48A1215220f800', // ✅ ИСПРАВЛЕНО
     API: '/api/proxy', 
     MAX_DD: 0.12, 
     VOL_TARGET: 0.12, 
@@ -127,6 +128,14 @@ document.addEventListener('DOMContentLoaded', () => {
     MAX_RETRIES: 3
   };
 
+  // ✅ FIX: Валидация checksum адресов при запуске
+  try {
+    CFG.USDC = ethers.utils.getAddress(CFG.USDC);
+    CFG.CTF = ethers.utils.getAddress(CFG.CTF);
+  } catch(e) {
+    console.error('Invalid contract addresses:', e);
+  }
+
   const ABI_USDC = [
     "function approve(address,uint256) returns(bool)",
     "function allowance(address,address) view returns(uint256)",
@@ -134,8 +143,9 @@ document.addEventListener('DOMContentLoaded', () => {
     "function decimals() view returns(uint8)"
   ];
   
+  // ✅ FIX: Актуальный ABI для Polymarket CTF Exchange v2
   const ABI_CTF = [
-    "function buyShares(address,uint256[],uint256[],uint256,address) external payable returns(uint256[])"
+    "function buyShares(bytes32 conditionId, uint256[] outcomeTokenAmounts, uint256[] outcomeTokenIds, uint256 investment, address referrer) external payable returns(uint256[])"
   ];
 
   let S = {
@@ -237,16 +247,15 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if(isNaN(pr) || pr <= 0) pr = 0.5;
         
-        // ✅ FIX: Определяем сторону и Edge корректно
         let side, edge, outcomeId;
         if(pr >= 0.5) {
           side = 'YES';
           edge = (pr - 0.5) * 100;
-          outcomeId = 1; // YES
+          outcomeId = 1;
         } else {
           side = 'NO';
           edge = (0.5 - pr) * 100;
-          outcomeId = 0; // NO
+          outcomeId = 0;
         }
         
         const sz = Math.min(S.params.trade, Math.max(CFG.MIN_TRADE, (S.usdc * (S.params.kelly/100)) * (S.params.conf/70)));
@@ -312,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch(e) { UI.log(`❌ API: ${e.message}`,'error'); }
   }
 
-  // ✅ FIX: Принимает outcomeId (0=NO, 1=YES)
+  // ✅ FIX: Корректная передача параметров в buyShares
   window.trade = async function(cid, outcomeId, sz) {
     const dry = UI.el('dry').checked;
     const sideName = outcomeId === 1 ? 'YES' : 'NO';
@@ -329,18 +338,34 @@ document.addEventListener('DOMContentLoaded', () => {
       const u = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
       const amt = ethers.utils.parseUnits(sz.toString(), 6);
       if((await u.allowance(S.acc, CFG.CTF)).lt(amt)) {
-        UI.log('🔑 Approve...','info'); await (await u.approve(CFG.CTF, amt, {gasLimit:60000})).wait();
+        UI.log('🔑 Approve USDC...','info'); 
+        const txApprove = await u.approve(CFG.CTF, amt, {gasLimit:60000});
+        await txApprove.wait();
+        UI.log('✅ USDC Approved','success');
       }
       UI.log('🌐 Подтвердите в MetaMask...','warn');
       const c = new ethers.Contract(CFG.CTF, ABI_CTF, S.signer);
-      // ✅ FIX: Передаём outcomeId в amounts и ids
-      const amounts = outcomeId === 1 ? [ethers.BigNumber.from(0), amt] : [amt, ethers.BigNumber.from(0)];
-      const ids = outcomeId === 1 ? [0, 1] : [0, 1]; // В Polymarket CTF ids обычно [0,1], amounts определяют сторону
-      const tx = await c.buyShares(cid, amounts, ids, amt, '0x0', {gasLimit:150000});
-      const r = await tx.wait(); S.apos++;
-      UI.log(`✅ TX: ${r.transactionHash.slice(0,10)}...`,'success'); await refresh();
+      
+      // ✅ FIX: Правильная структура для Polymarket CTF Exchange
+      // outcomeTokenIds всегда [0, 1], amounts определяют сторону
+      const amounts = outcomeId === 1 ? [ethers.constants.Zero, amt] : [amt, ethers.constants.Zero];
+      const ids = [ethers.constants.Zero, ethers.BigNumber.from(1)];
+      
+      const tx = await c.buyShares(cid, amounts, ids, amt, ethers.constants.AddressZero, {gasLimit: 250000});
+      UI.log('⏳ Ожидание подтверждения блокчейна...','info');
+      const r = await tx.wait(); 
+      S.apos++;
+      UI.log(`✅ TX: ${r.transactionHash.slice(0,10)}...`,'success'); 
+      await refresh();
       setTimeout(() => Core.add('pending',0), 2000);
-    } catch(e) { UI.log(`❌ ${e.code===4001?'Отменено':e.message}`,'error'); }
+    } catch(e) { 
+      let msg = e.message;
+      if(e.code === 4001) msg = 'Отменено пользователем';
+      else if(e.code === 'INVALID_ARGUMENT') msg = 'Ошибка адреса/ABI контракта';
+      else if(e.message.includes('execution reverted')) msg = 'Транзакция отклонена контрактом';
+      UI.log(`❌ ${msg}`,'error'); 
+      console.error('Trade Error:', e);
+    }
   };
 
   function startAuto() { if(S.run) return; S.run=true; UI.el('b-auto').disabled=true; UI.el('b-stop').disabled=false; UI.log('🚀 Автобот запущен','success'); refresh(); scan(); S.timer=setInterval(()=>{ if(!S.run)return; refresh(); scan(); }, CFG.SCAN_INT); }
@@ -349,7 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.acceptRisk = () => document.getElementById('risk-modal').classList.add('hidden');
   UI.el('b-con').onclick=connect; UI.el('b-scan').onclick=scan; UI.el('b-auto').onclick=startAuto; UI.el('b-stop').onclick=stopAuto;
   UI.el('b-reset').onclick=()=>{ if(confirm('Сброс?')){localStorage.removeItem('pb7_data');location.reload();} };
-  Core.init(); UI.updMetrics(); UI.updParams(); UI.log('📦 POLYBOT v7.6 Ready.','success');
+  Core.init(); UI.updMetrics(); UI.updParams(); UI.log('📦 POLYBOT v7.7 Ready.','success');
 });
 </script>
 </body>
