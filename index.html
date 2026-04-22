@@ -3,10 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POLYBOT v7.5 — Production Ready</title>
-  <!-- ✅ Убрал битую favicon -->
+  <title>POLYBOT v7.6 — Directional Trading</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  
   <style>
     :root { --bg:#0b0e11; --card:#151a21; --accent:#00f2a1; --danger:#ff4757; --warn:#ffa502; --text:#e2e8f0; --muted:#64748b; --border:#1e293b; }
     * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',system-ui,sans-serif; }
@@ -61,16 +59,15 @@
 
   <div class="container">
     <header>
-      <div><h1>🤖 POLYBOT v7.5</h1><small style="color:var(--muted)">Fixed Price Parser | Polygon</small></div>
+      <div><h1>🤖 POLYBOT v7.6</h1><small style="color:var(--muted)">Directional Logic | Polygon</small></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <div class="badge" id="w-badge">🔌 Offline</div>
         <div class="badge" id="m-badge">⚙️ Initializing</div>
       </div>
     </header>
 
-    <!-- ✅ ALERT IF NO MATIC -->
     <div class="alert" id="matic-alert" style="display:none;">
-      ⚠️ <b>КРИТИЧНО:</b> У вас нет MATIC для оплаты газа! Пополните кошелёк минимум на 0.05 MATIC.
+      ⚠️ <b>КРИТИЧНО:</b> У вас нет POL/MATIC для оплаты газа!
     </div>
 
     <div class="warning">
@@ -78,7 +75,7 @@
     </div>
 
     <div class="grid">
-      <div class="card"><h3>💰 Кошелёк</h3><div class="metric"><span>USDC</span><b id="usdc">0.00</b></div><div class="metric" style="margin-top:8px"><span>MATIC (Gas)</span><b id="matic">0.0000</b></div></div>
+      <div class="card"><h3>💰 Кошелёк</h3><div class="metric"><span>USDC</span><b id="usdc">0.00</b></div><div class="metric" style="margin-top:8px"><span>POL/MATIC</span><b id="matic">0.0000</b></div></div>
       <div class="card"><h3>📊 Аналитика</h3><div class="metric"><span>Win Rate (10)</span><b id="wr">—</b></div><div class="metric" style="margin-top:8px"><span>Confidence</span><b id="conf">—</b></div></div>
       <div class="card"><h3>🛡️ Защита</h3><div class="metric"><span>Max Drawdown</span><b id="dd">0.0%</b></div><div class="metric" style="margin-top:8px"><span>Активных</span><b id="apos">0</b></div></div>
     </div>
@@ -106,8 +103,8 @@
     <div class="card">
       <h3>📈 Рынки</h3>
       <div style="overflow-x:auto">
-        <table><thead><tr><th>Рынок</th><th>Цена</th><th>Edge</th><th>Size</th><th>Signal</th><th>Action</th></tr></thead>
-        <tbody id="m-body"><tr><td colspan="6" style="text-align:center;color:var(--muted)">Ожидание подключения...</td></tr></tbody></table>
+        <table><thead><tr><th>Рынок</th><th>Цена</th><th>Сторона</th><th>Edge</th><th>Size</th><th>Signal</th><th>Action</th></tr></thead>
+        <tbody id="m-body"><tr><td colspan="7" style="text-align:center;color:var(--muted)">Ожидание подключения...</td></tr></tbody></table>
       </div>
     </div>
 
@@ -126,7 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
     CALIB_INT: 5, 
     SCAN_INT: 45000,
     MIN_TRADE: 0.01,
-    MIN_MATIC: 0.02,
+    MIN_MATIC: 0.01,
     MAX_RETRIES: 3
   };
 
@@ -202,11 +199,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const maticEl = this.el('matic');
       maticEl.textContent = S.matic.toFixed(4);
       maticEl.className = S.matic < CFG.MIN_MATIC ? 'warn' : '';
-      
-      // Show/hide MATIC alert
       const alertEl = this.el('matic-alert');
       if(alertEl) alertEl.style.display = S.matic < CFG.MIN_MATIC ? 'block' : 'none';
-      
       this.el('wr').textContent = (Core.wr()*100).toFixed(0)+'%';
       this.el('dd').textContent = (S.peak>0?((S.peak-S.usdc)/S.peak*100).toFixed(1):'0.0')+'%';
       this.el('conf').textContent = S.params.conf+'%';
@@ -226,13 +220,12 @@ document.addEventListener('DOMContentLoaded', () => {
     },
     renderMarkets(events) {
       const tb = this.el('m-body'); if(!tb) return;
-      if(!events || events.length === 0) { tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted)">Нет рынков</td></tr>'; return; }
+      if(!events || events.length === 0) { tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted)">Нет рынков</td></tr>'; return; }
       let h=''; let displayed = 0;
       events.forEach(ev => {
         if(displayed >= 15) return;
         const m = ev.markets && ev.markets[0]; if(!m) return;
         
-        // ✅ FIX: Try multiple price sources
         let pr = 0.5;
         if(m.outcomes && m.outcomes.length > 0 && m.outcomes[0].price !== undefined) {
           pr = parseFloat(m.outcomes[0].price);
@@ -243,23 +236,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         if(isNaN(pr) || pr <= 0) pr = 0.5;
-        const edge = Math.abs(pr - 0.5) * 100;
+        
+        // ✅ FIX: Определяем сторону и Edge корректно
+        let side, edge, outcomeId;
+        if(pr >= 0.5) {
+          side = 'YES';
+          edge = (pr - 0.5) * 100;
+          outcomeId = 1; // YES
+        } else {
+          side = 'NO';
+          edge = (0.5 - pr) * 100;
+          outcomeId = 0; // NO
+        }
+        
         const sz = Math.min(S.params.trade, Math.max(CFG.MIN_TRADE, (S.usdc * (S.params.kelly/100)) * (S.params.conf/70)));
         const ok = edge >= S.params.edge && sz >= CFG.MIN_TRADE && S.apos < S.params.pos && !Core.check();
         const title = ev.title || m.slug || 'Market';
         const cid = m.conditionId || m.id; if(!cid) return;
         
         h += `<tr>
-          <td>${title.slice(0,35)}...</td>
+          <td>${title.slice(0,30)}...</td>
           <td>${(pr*100).toFixed(1)}%</td>
+          <td style="color:${side==='YES'?'var(--accent)':'var(--warn)'};font-weight:700">${side}</td>
           <td style="color:${edge>=S.params.edge?'var(--accent)':'var(--muted)'}">${edge.toFixed(1)}%</td>
           <td>$${sz.toFixed(2)}</td>
           <td style="color:${ok?'var(--accent)':'var(--muted)'};font-weight:700">${ok?'BUY':'WAIT'}</td>
-          <td>${ok?`<button class="btn btn-primary" style="padding:4px 8px;font-size:10px" onclick="window.trade('${cid}',${sz.toFixed(2)})">Trade</button>`:'—'}</td>
+          <td>${ok?`<button class="btn btn-primary" style="padding:4px 8px;font-size:10px" onclick="window.trade('${cid}',${outcomeId},${sz.toFixed(2)})">Trade ${side}</button>`:'—'}</td>
         </tr>`;
         displayed++;
       });
-      tb.innerHTML = h || '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Нет подходящих рынков</td></tr>';
+      tb.innerHTML = h || '<tr><td colspan="7" style="text-align:center;color:var(--muted)">Нет подходящих рынков</td></tr>';
     }
   };
 
@@ -306,17 +312,20 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch(e) { UI.log(`❌ API: ${e.message}`,'error'); }
   }
 
-  window.trade = async function(cid, sz) {
+  // ✅ FIX: Принимает outcomeId (0=NO, 1=YES)
+  window.trade = async function(cid, outcomeId, sz) {
     const dry = UI.el('dry').checked;
+    const sideName = outcomeId === 1 ? 'YES' : 'NO';
+    
     if(Core.check()) return UI.log('🛑 Circuit Breaker','error');
-    if(S.matic < CFG.MIN_MATIC) return UI.log(`⚠️ Мало MATIC (мин. ${CFG.MIN_MATIC})`,'error');
+    if(S.matic < CFG.MIN_MATIC) return UI.log(`⚠️ Мало POL/MATIC`,'error');
     if(sz > S.usdc) return UI.log('❌ Мало USDC','error');
     if(dry) {
       const w = Math.random() > 0.48; Core.add(w?'win':'loss', w?sz*0.7:-sz);
-      UI.log(`🧪 Dry: ${w?'WIN':'LOSS'} $${sz.toFixed(2)}`,'info'); UI.updMetrics(); return;
+      UI.log(`🧪 Dry: ${sideName} ${w?'WIN':'LOSS'} $${sz.toFixed(2)}`,'info'); UI.updMetrics(); return;
     }
     try {
-      UI.log(`📦 Покупка $${sz.toFixed(2)}...`,'info');
+      UI.log(`📦 Покупка ${sideName} $${sz.toFixed(2)}...`,'info');
       const u = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
       const amt = ethers.utils.parseUnits(sz.toString(), 6);
       if((await u.allowance(S.acc, CFG.CTF)).lt(amt)) {
@@ -324,7 +333,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       UI.log('🌐 Подтвердите в MetaMask...','warn');
       const c = new ethers.Contract(CFG.CTF, ABI_CTF, S.signer);
-      const tx = await c.buyShares(cid, [0, amt], [0, 1], amt, '0x0', {gasLimit:150000});
+      // ✅ FIX: Передаём outcomeId в amounts и ids
+      const amounts = outcomeId === 1 ? [ethers.BigNumber.from(0), amt] : [amt, ethers.BigNumber.from(0)];
+      const ids = outcomeId === 1 ? [0, 1] : [0, 1]; // В Polymarket CTF ids обычно [0,1], amounts определяют сторону
+      const tx = await c.buyShares(cid, amounts, ids, amt, '0x0', {gasLimit:150000});
       const r = await tx.wait(); S.apos++;
       UI.log(`✅ TX: ${r.transactionHash.slice(0,10)}...`,'success'); await refresh();
       setTimeout(() => Core.add('pending',0), 2000);
@@ -337,7 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.acceptRisk = () => document.getElementById('risk-modal').classList.add('hidden');
   UI.el('b-con').onclick=connect; UI.el('b-scan').onclick=scan; UI.el('b-auto').onclick=startAuto; UI.el('b-stop').onclick=stopAuto;
   UI.el('b-reset').onclick=()=>{ if(confirm('Сброс?')){localStorage.removeItem('pb7_data');location.reload();} };
-  Core.init(); UI.updMetrics(); UI.updParams(); UI.log('📦 POLYBOT v7.5 Ready.','success');
+  Core.init(); UI.updMetrics(); UI.updParams(); UI.log('📦 POLYBOT v7.6 Ready.','success');
 });
 </script>
 </body>
