@@ -3,14 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POLYBOT v8.1.2 — Adaptive Trading Engine</title>
+  <title>POLYBOT v8.2.0 — Fixed Connection & Trading</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
-    :root { 
-      --bg:#0b0e11; --card:#151a21; --accent:#00f2a1; --danger:#ff4757; --warn:#ffa502; 
-      --text:#e2e8f0; --muted:#64748b; --border:#1e293b; 
-      --mom:#38bdf8; --cat:#f472b6; --rev:#a78bfa; --bull:#10b981; --bear:#ef4444;
-    }
+    :root { --bg:#0b0e11; --card:#151a21; --accent:#00f2a1; --danger:#ff4757; --warn:#ffa502; --text:#e2e8f0; --muted:#64748b; --border:#1e293b; }
     * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',system-ui,sans-serif; }
     body { background:var(--bg); color:var(--text); padding:20px; line-height:1.5; }
     .container { max-width:1200px; margin:0 auto; }
@@ -26,8 +22,6 @@
     .metric { background:rgba(255,255,255,0.03); padding:10px; border-radius:10px; }
     .metric span { display:block; color:var(--muted); font-size:11px; margin-bottom:4px; }
     .metric b { font-size:18px; }
-    .metric b.pos { color:var(--accent); }
-    .metric b.neg { color:var(--danger); }
     .controls { display:flex; gap:10px; flex-wrap:wrap; margin:16px 0; align-items:center; }
     .btn { padding:10px 16px; border:none; border-radius:10px; font-weight:600; cursor:pointer; transition:0.2s; font-size:13px; display:flex; align-items:center; gap:6px; }
     .btn:disabled { opacity:0.5; cursor:not-allowed; }
@@ -36,19 +30,17 @@
     .btn-danger { background:var(--danger); color:#fff; }
     .btn-secondary { background:#1e293b; color:var(--text); border:1px solid var(--border); }
     .btn-log { background:var(--mom); color:#000; font-size:11px; padding:6px 12px; }
-    .btn-sell { background:var(--warn); color:#000; font-size:11px; padding:4px 10px; }
     .toggle { display:flex; align-items:center; gap:8px; margin-left:auto; background:#1e293b; padding:6px 12px; border-radius:16px; }
     table { width:100%; border-collapse:collapse; font-size:12px; }
     th,td { padding:10px; text-align:left; border-bottom:1px solid var(--border); }
     th { color:var(--muted); font-weight:500; }
     .log-box { background:#0a0c0e; padding:12px; border-radius:10px; height:180px; overflow-y:auto; font-family:monospace; font-size:11px; border:1px solid var(--border); }
-    .log-entry { margin-bottom:4px; padding-left:8px; border-left:3px solid transparent; display:flex; justify-content:space-between; }
+    .log-entry { margin-bottom:4px; padding-left:8px; border-left:3px solid transparent; }
     .log-entry.info { border-color:#38bdf8; color:#38bdf8; }
     .log-entry.success { border-color:var(--accent); color:var(--accent); }
     .log-entry.error { border-color:var(--danger); color:var(--danger); }
-    .log-entry.warn { border-color:var(--warn); color:var(--warn); }
     .log-entry.debug { border-color:var(--muted); color:var(--muted); font-size:10px; }
-    .alert { background:rgba(255,71,87,0.15); border:1px solid var(--danger); padding:12px; border-radius:10px; margin-bottom:16px; font-size:12px; color:var(--danger); display:none; }
+    .alert { background:rgba(255,71,87,0.15); border:1px solid var(--danger); padding:12px; border-radius:10px; margin-bottom:16px; font-size:13px; color:var(--danger); display:none; }
     .alert.show { display:block; }
     .warning { background:rgba(255,165,2,0.1); border:1px solid var(--warn); padding:12px; border-radius:10px; margin-bottom:16px; font-size:12px; color:var(--warn); }
     .pos-row { transition: background 0.3s; }
@@ -60,8 +52,6 @@
     .tag-cat { background:rgba(244,114,182,0.2); color:var(--cat); border:1px solid var(--cat); }
     .tag-mom { background:rgba(56,189,248,0.2); color:var(--mom); border:1px solid var(--mom); }
     .tag-rev { background:rgba(167,139,250,0.2); color:var(--rev); border:1px solid var(--rev); }
-    .tag-bull { background:rgba(16,185,129,0.2); color:var(--bull); border:1px solid var(--bull); }
-    .tag-bear { background:rgba(239,68,68,0.2); color:var(--bear); border:1px solid var(--bear); }
     @media(max-width:768px) { .controls{flex-direction:column;} .toggle{margin-left:0;width:100%;justify-content:center;} .btn{width:100%;justify-content:center;} }
   </style>
 </head>
@@ -69,8 +59,8 @@
   <div class="container">
     <header>
       <div>
-        <h1>🤖 POLYBOT v8.1.2</h1>
-        <small style="color:var(--muted)">Adaptive Engine | Hybrid Strategy | Deep Logging</small>
+        <h1>🤖 POLYBOT v8.2.0</h1>
+        <small style="color:var(--muted)">Fixed Connection | Real Trading | Deep Logging</small>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <div class="badge" id="w-badge">🔌 Offline</div>
@@ -79,12 +69,13 @@
       </div>
     </header>
 
-    <div class="alert" id="matic-alert">
-      ⚠️ <b>КРИТИЧНО:</b> У вас нет POL/MATIC для оплаты газа! Пополните кошелёк минимум на 0.05 POL.
+    <!-- ✅ УВЕДОМЛЕНИЕ О БЛОКИРОВКЕ МЕТАМАСКА -->
+    <div class="alert" id="metamask-alert">
+      ⚠️ <b>MetaMask заблокирован!</b> Разблокируйте кошелек и попробуйте подключиться снова.
     </div>
 
     <div class="warning">
-      🔒 <b>ВАЖНО:</b> Бот работает только с USDC на Polygon. Гибридная стратегия активна.
+      🔒 <b>ВАЖНО:</b> Бот работает только с USDC на Polygon. Убедитесь что MetaMask разблокирован.
     </div>
 
     <div class="grid">
@@ -95,10 +86,7 @@
 
     <!-- МОИ ПОЗИЦИИ -->
     <div class="card">
-      <h3>
-        📂 Мои Позиции (Live)
-        <button class="btn btn-sell" id="b-sell-all" style="display:none;">💰 Продать всё в плюс</button>
-      </h3>
+      <h3>📂 Мои Позиции (Live)</h3>
       <div style="overflow-x:auto">
         <table><thead><tr><th>Рынок</th><th>Стратегия</th><th>Вход</th><th>Тек. Цена</th><th>PnL</th><th>Action</th></tr></thead>
         <tbody id="pos-body"><tr><td colspan="6" style="text-align:center;color:var(--muted)">Нет позиций</td></tr></tbody></table>
@@ -141,51 +129,23 @@
 
 <script>
 // ============================================================
-//  DEEP LOGGING SYSTEM
-// ============================================================
-const LOG_BUFFER = [];
-const MAX_LOG_SIZE = 500;
-
-function deepLog(level, msg, data = null) {
-  const entry = { timestamp: new Date().toISOString(), level, message: msg, data };
-  LOG_BUFFER.push(entry);
-  if (LOG_BUFFER.length > MAX_LOG_SIZE) LOG_BUFFER.shift();
-  
-  // Визуальное отображение (только не DEBUG)
-  if (level !== 'DEBUG') {
-    const logEl = document.getElementById('log');
-    const cls = level === 'ERROR' ? 'error' : level === 'SUCCESS' ? 'success' : level === 'WARN' ? 'warn' : 'info';
-    logEl.innerHTML += `<div class="log-entry ${cls}"><span>${msg}</span><small>${new Date().toLocaleTimeString()}</small></div>`;
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-}
-
-function downloadLogs() {
-  const blob = new Blob([JSON.stringify(LOG_BUFFER, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `polybot-debug-${Date.now()}.json`;
-  a.click(); URL.revokeObjectURL(url);
-  deepLog('INFO', '📥 Логи скачаны');
-}
-
-// ============================================================
-// ⚙️ CONFIGURATION
+// 🔧 ГЛОБАЛЬНЫЕ НАСТРОЙКИ
 // ============================================================
 const CFG = {
   POLYGON: 137,
-  USDC: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
-  CTF: '0xc5d563a36ae78145c45a50134d48a1215220f800',
+  USDC: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+  CTF: '0xCf76E4d02e8538c6934102379c0506475b27D698',
   API: '/api/proxy', 
-  MAX_DD: 0.15, 
-  VOL_TARGET: 0.12,
+  MAX_DD: 0.12, 
+  VOL_TARGET: 0.12, 
+  CALIB_INT: 5, 
   SCAN_INT: 30000,
-  CALIB_INT: 5,
   MIN_TRADE: 1.00,
   MIN_MATIC: 0.02,
   MAX_RETRIES: 3
 };
 
+// ABI контрактов
 const ABI_USDC = [
   "function approve(address,uint256) returns(bool)",
   "function allowance(address,address) view returns(uint256)",
@@ -199,23 +159,92 @@ const ABI_CTF = [
 ];
 
 // ============================================================
-// 💾 STATE MANAGEMENT
+// 💾 СОСТОЯНИЕ ПРИЛОЖЕНИЯ
 // ============================================================
 let S = {
-  con: false, acc: null, signer: null, prov: null,
-  usdc: 0, matic: 0, peak: 0, trades: [], run: false, timer: null, sc: 0,
-  positions: [],
-  params: { mode:'INIT', kelly:0, edge:0, trade:0, pos:0, conf:0, tp:0.10, sl:0.05 }
+  con: false,           // Подключен ли кошелек
+  acc: null,            // Адрес кошелька (ПОЛНЫЙ, 42 символа)
+  signer: null,         // Подписант для транзакций
+  prov: null,           // Провайдер для чтения
+  usdc: 0,              // Баланс USDC
+  matic: 0,             // Баланс POL/MATIC
+  peak: 0,              // Пиковый баланс (для расчета просадки)
+  trades: [],           // История сделок
+  run: false,           // Запущен ли автобот
+  timer: null,          // Таймер сканирования
+  sc: 0,                // Счетчик сканирований
+  positions: [],        // Открытые позиции
+  params: { mode:'INIT', kelly:0, edge:0, trade:0, pos:0, conf:0, tp:0.10 }
 };
 
-function loadPositions() {
-  try { S.positions = JSON.parse(localStorage.getItem('pb_positions') || '[]'); } catch(e) { S.positions = []; }
+// ============================================================
+// 📝 СИСТЕМА ЛОГИРОВАНИЯ
+// ============================================================
+const LOG_BUFFER = [];
+const MAX_LOG_SIZE = 500;
+
+function deepLog(level, msg, data = null) {
+  const entry = { timestamp: new Date().toISOString(), level, message: msg, data };
+  LOG_BUFFER.push(entry);
+  if (LOG_BUFFER.length > MAX_LOG_SIZE) LOG_BUFFER.shift();
+  
+  // Визуальное отображение
+  if (level !== 'DEBUG') {
+    const logEl = document.getElementById('log');
+    if (!logEl) return;
+    const cls = level === 'ERROR' ? 'error' : level === 'SUCCESS' ? 'success' : level === 'WARN' ? 'warn' : 'info';
+    logEl.innerHTML += `<div class="log-entry ${cls}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
 }
-function savePositions() { localStorage.setItem('pb_positions', JSON.stringify(S.positions)); }
-function clearPositions() { S.positions = []; savePositions(); renderPositions([]); deepLog('INFO', '🗑 Портфель очищен'); }
+
+function downloadLogs() {
+  const blob = new Blob([JSON.stringify(LOG_BUFFER, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `polybot-debug-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  deepLog('INFO', '📥 Логи скачаны');
+}
 
 // ============================================================
-// 🧠 ADAPTIVE STRATEGY ENGINE
+// 💾 ЗАГРУЗКА/СОХРАНЕНИЕ ДАННЫХ
+// ============================================================
+function loadPositions() {
+  try {
+    const saved = localStorage.getItem('pb_positions');
+    S.positions = saved ? JSON.parse(saved) : [];
+  } catch(e) {
+    S.positions = [];
+  }
+}
+
+function savePositions() {
+  localStorage.setItem('pb_positions', JSON.stringify(S.positions));
+}
+
+function loadTrades() {
+  try {
+    const d = JSON.parse(localStorage.getItem('pb7_data')||'{}');
+    S.trades = d.trades||[]; 
+    S.peak = d.peak||0;
+  } catch(e){ 
+    deepLog('WARN', 'Ошибка загрузки истории', e); 
+  }
+}
+
+function saveTrades() {
+  localStorage.setItem('pb7_data', JSON.stringify({
+    trades: S.trades, 
+    peak: S.peak, 
+    timestamp: Date.now()
+  }));
+}
+
+// ============================================================
+// 🧠 АДАПТИВНОЕ ЯДРО
 // ============================================================
 const Strategy = {
   analyze: (market) => {
@@ -226,66 +255,82 @@ const Strategy = {
     if (Math.abs(price - 0.5) < 0.1 && vol > 1000) return { type: 'MEAN_REV', tag: 'tag-rev', label: 'MEAN REV' };
     return { type: 'CATALYST', tag: 'tag-cat', label: 'CATALYST' };
   },
-
+  
   getParams: (type, usdcBalance, wr, dd) => {
-    let k=12, e=8, t=Math.min(80, usdcBalance*0.15), p=3, c=60, tp=0.10, sl=0.05;
+    let k=12, e=8, t=Math.min(80, usdcBalance*0.15), p=3, c=60, tp=0.10;
     
     if (dd > CFG.MAX_DD || (S.trades.length > 5 && wr < 0.35)) {
-      return { mode:'PAUSED', kelly:0, edge:99, trade:0, pos:0, conf:0, tp:0, sl:0 };
+      return { mode:'PAUSED', kelly:0, edge:99, trade:0, pos:0, conf:0, tp:0 };
     }
     
     switch(type) {
       case 'MOMENTUM':
-        k = 22; e = 4; t = Math.min(150, usdcBalance*0.25); p = 4; c = Math.min(95, wr*100+20);
-        tp = 0.15; sl = 0.05;
+        k = Math.min(25, k * 1.2);
+        t = Math.min(150, usdcBalance * 0.25);
+        tp = 0.15;
         break;
       case 'CATALYST':
-        k = 14; e = 7; t = Math.min(60, usdcBalance*0.15); p = 3; c = Math.min(75, wr*80+30);
-        tp = 0.20; sl = 0.10;
+        k = k;
+        t = Math.min(80, usdcBalance * 0.15);
+        tp = 0.18;
         break;
       case 'MEAN_REV':
-        k = 18; e = 5; t = Math.min(40, usdcBalance*0.12); p = 4; c = Math.min(85, wr*90+10);
-        tp = 0.08; sl = 0.05;
+        k = Math.max(8, k * 0.8);
+        t = Math.min(50, usdcBalance * 0.10);
+        tp = 0.08;
         break;
     }
     
-    if (wr >= 0.60 && dd < 0.05) {
-      k = Math.max(k, 25); t = Math.min(t, usdcBalance*0.30); p = Math.max(p, 5);
+    // Корректировка по Win Rate
+    if (wr >= 0.60) {
+      k = Math.min(25, k * 1.1);
+      t = Math.min(150, usdcBalance * 0.20);
+    } else if (wr < 0.40) {
+      k = Math.max(5, k * 0.7);
+      t = Math.min(40, usdcBalance * 0.10);
     }
     
-    return { mode:'BALANCED', kelly:k, edge:e, trade:t, pos:p, conf:c, tp, sl };
+    return {
+      mode: dd > CFG.MAX_DD ? 'PAUSED' : 'BALANCED',
+      kelly: k,
+      edge: e,
+      trade: Math.max(CFG.MIN_TRADE, t),
+      pos: p,
+      conf: Math.min(95, Math.max(30, wr * 100 + 20)),
+      tp: tp
+    };
   }
 };
 
 // ============================================================
-// 🧮 CORE LOGIC
+// 🧮 ЯДРО ТОРГОВЛИ
 // ============================================================
 const Core = {
   init() {
     loadPositions();
-    try {
-      const d = JSON.parse(localStorage.getItem('pb7_data')||'{}');
-      S.trades = d.trades||[]; S.peak = d.peak||0;
-    } catch(e){ deepLog('WARN', 'Ошибка загрузки истории', e); }
+    loadTrades();
     this.recalc();
   },
   
-  save() { localStorage.setItem('pb7_data', JSON.stringify({trades:S.trades, peak:S.peak, timestamp: Date.now()})); },
-  
-  addTrade(r,p) {
-    S.trades.push({t:Date.now(), r, p});
-    if(S.trades.length>50) S.trades.shift();
-    this.save(); this.recalc();
+  addTrade(result, profit) {
+    S.trades.push({ t: Date.now(), r: result, p: profit });
+    if (S.trades.length > 50) S.trades.shift();
+    saveTrades();
+    this.recalc();
   },
   
-  wr() { const r=S.trades.slice(-10); return r.length? r.filter(x=>x.r==='win').length/r.length : 0.5; },
+  wr() {
+    const r = S.trades.slice(-10);
+    return r.length ? r.filter(x => x.r === 'win').length / r.length : 0.5;
+  },
   
   check() {
-    const dd = S.peak>0 ? (S.peak-S.usdc)/S.peak : 0;
+    const dd = S.peak > 0 ? (S.peak - S.usdc) / S.peak : 0;
     const w = this.wr();
-    const trip = dd>CFG.MAX_DD || (S.trades.length>5 && w<0.35);
+    const trip = dd > CFG.MAX_DD || (S.trades.length > 5 && w < 0.35);
+    
     const badge = document.getElementById('m-badge');
-    if(badge) {
+    if (badge) {
       badge.textContent = trip ? '🛑 TRIPPED' : `⚙️ ${S.params.mode}`;
       badge.className = trip ? 'badge red' : 'badge';
     }
@@ -293,35 +338,29 @@ const Core = {
   },
   
   recalc() {
-    const w=this.wr(), dd=S.peak>0?(S.peak-S.usdc)/S.peak:0;
-    // Берем средние параметры от всех активных стратегий
-    const avgParams = {kelly:0, edge:0, trade:0, pos:0, conf:0, tp:0.10, sl:0.05, count:0};
+    const w = this.wr();
+    const dd = S.peak > 0 ? (S.peak - S.usdc) / S.peak : 0;
+    const trip = this.check();
     
-    ['CATALYST','MOMENTUM','MEAN_REV'].forEach(type => {
-      const p = Strategy.getParams(type, S.usdc, w, dd);
-      avgParams.kelly += p.kelly; avgParams.edge += p.edge; avgParams.trade += p.trade;
-      avgParams.pos += p.pos; avgParams.conf += p.conf; avgParams.tp += p.tp; avgParams.sl += p.sl;
-      avgParams.count++;
-    });
+    // Берем параметры для CATALYST как базовые
+    const p = Strategy.getParams('CATALYST', S.usdc, w, dd);
     
-    if (avgParams.count > 0) {
-      S.params = {
-        mode: dd>CFG.MAX_DD ? 'PAUSED' : 'BALANCED',
-        kelly: avgParams.kelly/avgParams.count,
-        edge: avgParams.edge/avgParams.count,
-        trade: avgParams.trade/avgParams.count,
-        pos: Math.max(1, Math.floor(avgParams.pos/avgParams.count)),
-        conf: avgParams.conf/avgParams.count,
-        tp: avgParams.tp/avgParams.count,
-        sl: avgParams.sl/avgParams.count
-      };
-    }
+    S.params = {
+      mode: p.mode,
+      kelly: p.kelly,
+      edge: p.edge,
+      trade: p.trade,
+      pos: p.pos,
+      conf: p.conf,
+      tp: p.tp
+    };
     
-    document.getElementById('p-mode').textContent = S.params.mode;
-    document.getElementById('p-kelly').textContent = S.params.kelly.toFixed(1)+'%';
-    document.getElementById('p-edge').textContent = S.params.edge.toFixed(1)+'%';
-    document.getElementById('p-trade').textContent = '$'+S.params.trade.toFixed(2);
-    document.getElementById('p-tp').textContent = (S.params.tp*100).toFixed(0)+'%';
+    // Обновляем UI
+    document.getElementById('p-mode').textContent = p.mode;
+    document.getElementById('p-kelly').textContent = p.kelly.toFixed(1) + '%';
+    document.getElementById('p-edge').textContent = p.edge.toFixed(1) + '%';
+    document.getElementById('p-trade').textContent = '$' + p.trade.toFixed(2);
+    document.getElementById('p-tp').textContent = (p.tp * 100).toFixed(0) + '%';
   }
 };
 
@@ -333,99 +372,115 @@ const UI = {
   
   updMetrics() {
     this.el('usdc').textContent = S.usdc.toFixed(2);
-    const mEl = this.el('matic');
-    mEl.textContent = S.matic.toFixed(4);
-    mEl.style.color = S.matic < CFG.MIN_MATIC ? 'var(--danger)' : 'var(--text)';
-    this.el('matic-alert').className = S.matic < CFG.MIN_MATIC ? 'alert show' : 'alert';
-    this.el('wr').textContent = (Core.wr()*100).toFixed(0)+'%';
-    this.el('dd').textContent = (S.peak>0?((S.peak-S.usdc)/S.peak*100).toFixed(1):'0.0')+'%';
-    this.el('conf').textContent = S.params.conf.toFixed(0)+'%';
+    const maticEl = this.el('matic');
+    maticEl.textContent = S.matic.toFixed(4);
+    maticEl.style.color = S.matic < CFG.MIN_MATIC ? 'var(--danger)' : 'var(--text)';
+    
+    this.el('wr').textContent = (Core.wr() * 100).toFixed(0) + '%';
+    this.el('dd').textContent = (S.peak > 0 ? ((S.peak - S.usdc) / S.peak * 100).toFixed(1) : '0.0') + '%';
+    this.el('conf').textContent = S.params.conf.toFixed(0) + '%';
     this.el('apos').textContent = S.positions.length;
   },
   
   renderPositions(events) {
     const tb = this.el('pos-body');
-    if(S.positions.length === 0) { 
-      tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted)">Нет позиций</td></tr>'; 
-      this.el('b-sell-all').style.display='none'; 
-      return; 
+    if (!tb) return;
+    
+    if (S.positions.length === 0) {
+      tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Нет позиций</td></tr>';
+      return;
     }
     
-    let html = ''; let profitable = 0;
-    
+    let html = '';
     S.positions.forEach((pos, idx) => {
+      // Находим текущую цену
       let curPrice = pos.entryPrice;
       const ev = events.find(e => e.conditionId === pos.cid || (e.markets && e.markets.some(m => m.id === pos.cid)));
-      if(ev && ev.markets) {
+      if (ev && ev.markets) {
         const m = ev.markets.find(m => m.id === pos.cid);
-        if(m && m.outcomePrices) {
+        if (m && m.outcomePrices) {
           const yesPrice = parseFloat(m.outcomePrices[0]);
           curPrice = pos.outcomeId === 1 ? yesPrice : (1 - yesPrice);
         }
       }
       
-      const pnl = (curPrice - pos.entryPrice) / pos.entryPrice;
-      const isProfit = pnl >= S.params.tp;
-      if(isProfit) profitable++;
-      
+      const pnl = ((curPrice - pos.entryPrice) / pos.entryPrice) * 100;
+      const isProfit = pnl >= S.params.tp * 100;
       const cls = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
       const rowCls = pnl >= 0 ? 'pos-row profit' : 'pos-row loss';
       
       html += `<tr class="${rowCls}">
-        <td>${pos.title.slice(0,25)}...</td>
+        <td>${pos.title.slice(0, 30)}...</td>
         <td><span class="tag ${pos.tag}">${pos.type}</span></td>
         <td>$${pos.entryPrice.toFixed(2)}</td>
         <td>$${curPrice.toFixed(2)}</td>
-        <td class="${cls}">${(pnl*100).toFixed(1)}%</td>
-        <td>${isProfit ? `<button class="btn btn-sell" onclick="sellPos(${idx})">SELL</button>` : '—'}</td>
+        <td class="${cls}">${pnl.toFixed(1)}%</td>
+        <td>${isProfit ? `<button class="btn btn-sell" style="padding:2px 6px;font-size:10px" onclick="sellPos(${idx})">SELL</button>` : '—'}</td>
       </tr>`;
     });
     
     tb.innerHTML = html;
-    this.el('b-sell-all').style.display = profitable > 0 ? 'flex' : 'none';
   },
-
+  
   renderMarkets(events) {
     const tb = this.el('m-body');
-    if(!events || events.length === 0) { tb.innerHTML='<tr><td colspan="7">Нет рынков</td></tr>'; return; }
+    if (!tb) return;
     
-    let html = ''; let displayed = 0;
+    if (!events || events.length === 0) {
+      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted)">Нет рынков</td></tr>';
+      return;
+    }
+    
+    let html = '';
+    let displayed = 0;
+    
     events.forEach(ev => {
-      if(displayed >= 15) return;
-      const m = ev.markets?.find(m => !m.closed && m.active); 
-      if(!m) return;
+      if (displayed >= 15) return;
+      const m = ev.markets?.find(m => !m.closed && m.active);
+      if (!m) return;
       
+      // ✅ ИСПРАВЛЕНИЕ: Правильный парсинг цен
       let yesPrice = 0.5;
-      if(m.outcomePrices && Array.isArray(m.outcomePrices)) {
+      if (m.outcomePrices && Array.isArray(m.outcomePrices)) {
         yesPrice = parseFloat(m.outcomePrices[0]) || 0.5;
-      } else if(m.lastTradePrice) {
+      } else if (m.lastTradePrice) {
         yesPrice = parseFloat(m.lastTradePrice) || 0.5;
       }
       
-      if(isNaN(yesPrice) || yesPrice <= 0 || yesPrice >= 1) yesPrice = 0.5;
+      if (isNaN(yesPrice) || yesPrice <= 0 || yesPrice >= 1) yesPrice = 0.5;
       
       const strat = Strategy.analyze(m);
-      const p = Strategy.getParams(strat.type, S.usdc, Core.wr(), S.peak>0?(S.peak-S.usdc)/S.peak:0);
+      const p = Strategy.getParams(strat.type, S.usdc, Core.wr(), S.peak > 0 ? (S.peak - S.usdc) / S.peak : 0);
       
+      // Определяем сторону
       let side, edge, oid;
-      if(yesPrice >= 0.5) { 
-        side='YES'; edge=(yesPrice-0.5)*100; oid=1; 
-      } else { 
-        side='NO'; edge=(0.5-yesPrice)*100; oid=0; 
+      if (yesPrice >= 0.5) {
+        side = 'YES';
+        edge = (yesPrice - 0.5) * 100;
+        oid = 1;
+      } else {
+        side = 'NO';
+        edge = (0.5 - yesPrice) * 100;
+        oid = 0;
       }
       
       const ok = edge >= p.edge && S.positions.length < p.pos && !Core.check();
-      const size = Math.min(p.trade, Math.max(CFG.MIN_TRADE, S.usdc * (p.kelly/100)));
+      const size = Math.min(p.trade, Math.max(CFG.MIN_TRADE, S.usdc * (p.kelly / 100)));
+      const title = ev.title || m.slug || 'Market';
+      const cid = m.conditionId || m.id;
+      
+      if (!cid) return;
       
       html += `<tr>
-        <td>${ev.title.slice(0,25)}...</td>
+        <td>${title.slice(0, 30)}...</td>
         <td><span class="tag ${strat.tag}">${strat.label}</span></td>
-        <td>${(yesPrice*100).toFixed(1)}%</td>
-        <td style="color:${edge>=p.edge?'var(--accent)':'var(--muted)'}">${edge.toFixed(1)}%</td>
+        <td>${(yesPrice * 100).toFixed(1)}%</td>
+        <td style="color:${edge >= p.edge ? 'var(--accent)' : 'var(--muted)'}">${edge.toFixed(1)}%</td>
         <td>$${size.toFixed(2)}</td>
-        <td style="color:${ok?'var(--accent)':'var(--muted)'}">${ok?'BUY':'WAIT'}</td>
-        <td>${ok?`<button class="btn btn-primary" style="padding:4px;font-size:10px" onclick="window.trade('${m.conditionId || m.id}',${oid},${size.toFixed(2)},'${ev.title.replace(/'/g, "\\'")}','${strat.type}','${strat.tag}',${yesPrice.toFixed(3)})">Trade ${side}</button>`:'—'}</td>
+        <td style="color:${ok ? 'var(--accent)' : 'var(--muted)'};font-weight:700">${ok ? 'BUY' : 'WAIT'}</td>
+        <td>${ok ? `<button class="btn btn-primary" style="padding:4px 8px;font-size:10px" onclick="window.trade('${cid}', ${oid}, ${size.toFixed(2)}, '${title.replace(/'/g, "\\'")}', '${strat.type}', '${strat.tag}')">Trade ${side}</button>` : '—'}</td>
       </tr>`;
+      
       displayed++;
     });
     
@@ -434,196 +489,440 @@ const UI = {
 };
 
 // ============================================================
-// 🔗 CONNECTION & REFRESH
+// 🔗 ПОДКЛЮЧЕНИЕ К METAMASK (ИСПРАВЛЕННОЕ)
 // ============================================================
 async function connect() {
-  if(!window.ethereum) return deepLog('ERROR', 'MetaMask не найден');
+  // 1. Проверяем наличие MetaMask
+  if (!window.ethereum) {
+    deepLog('ERROR', '❌ MetaMask не найден! Установите расширение.');
+    return;
+  }
+  
   try {
-    const accs = await window.ethereum.request({method:'eth_requestAccounts'});
-    S.acc = accs[0]; S.prov = new ethers.providers.Web3Provider(window.ethereum); S.signer = S.prov.getSigner();
+    deepLog('INFO', '🔗 Запрос на подключение к MetaMask...');
+    
+    // 2. Запрашиваем доступ к аккаунтам (это откроет MetaMask)
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    
+    // 3. Проверяем что аккаунт получен
+    if (!accounts || accounts.length === 0) {
+      throw new Error('Не получен адрес кошелька');
+    }
+    
+    // 4. Валидируем адрес (должен быть 42 символа, начинаться с 0x)
+    const acc = accounts[0];
+    if (!acc || acc.length !== 42 || !acc.startsWith('0x')) {
+      throw new Error(`Некорректный адрес: ${acc}`);
+    }
+    
+    S.acc = acc;
+    deepLog('SUCCESS', `✅ Аккаунт получен: ${acc.slice(0, 6)}...${acc.slice(-4)}`);
+    
+    // 5. Создаем провайдер и подписант
+    S.prov = new ethers.providers.Web3Provider(window.ethereum);
+    S.signer = S.prov.getSigner();
+    
+    // 6. Проверяем сеть
     const net = await S.prov.getNetwork();
-    if(net.chainId !== CFG.POLYGON) await window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:'0x89'}]});
+    deepLog('INFO', `🌐 Текущая сеть: ${net.name} (Chain ID: ${net.chainId})`);
+    
+    if (net.chainId !== CFG.POLYGON) {
+      deepLog('WARN', '⚠️ Неверная сеть! Переключаю на Polygon...');
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x89' }]
+        });
+        deepLog('SUCCESS', '✅ Переключено на Polygon');
+      } catch (switchError) {
+        if (switchError.code === 4902) {
+          deepLog('ERROR', '❌ Polygon не добавлен в MetaMask! Добавьте сеть вручную.');
+          return;
+        }
+        throw switchError;
+      }
+    }
+    
+    // 7. Обновляем состояние
     S.con = true;
-    deepLog('SUCCESS', '✅ Подключено');
-    UI.el('w-badge').textContent = `✅ ${S.acc.slice(0,6)}...`; UI.el('w-badge').className='badge green';
-    UI.el('b-scan').disabled=false; UI.el('b-auto').disabled=false; UI.el('b-con').disabled=true;
-    refresh();
-  } catch(e) { deepLog('ERROR', `Ошибка: ${e.message}`); }
+    UI.el('w-badge').textContent = `✅ ${S.acc.slice(0, 6)}...`;
+    UI.el('w-badge').className = 'badge green';
+    UI.el('b-scan').disabled = false;
+    UI.el('b-auto').disabled = false;
+    UI.el('b-con').disabled = true;
+    
+    // 8. Загружаем балансы
+    await refresh();
+    
+    deepLog('SUCCESS', '✅ Подключение успешно!');
+    
+  } catch (error) {
+    // Обработка ошибок подключения
+    let msg = error.message || 'Неизвестная ошибка';
+    
+    if (error.code === 4001) {
+      msg = 'Вы отклонили запрос на подключение';
+    } else if (error.code === -32002) {
+      msg = 'Запрос уже в процессе. Проверьте MetaMask.';
+    } else if (msg.includes('locked') || msg.includes('unlock')) {
+      msg = 'MetaMask заблокирован! Разблокируйте кошелек.';
+      document.getElementById('metamask-alert').classList.add('show');
+    }
+    
+    deepLog('ERROR', `❌ Ошибка подключения: ${msg}`);
+    console.error('Connection Error:', error);
+    
+    // Сбрасываем состояние
+    S.con = false;
+    S.acc = null;
+    S.signer = null;
+    S.prov = null;
+  }
 }
 
+// ============================================================
+// 💰 ОБНОВЛЕНИЕ БАЛАНСОВ
+// ============================================================
 async function refresh() {
-  if(!S.con) return;
+  if (!S.con || !S.signer) {
+    deepLog('ERROR', '❌ Кошелек не подключен');
+    return;
+  }
+  
   try {
-    S.matic = parseFloat(ethers.utils.formatEther(await S.prov.getBalance(S.acc)));
-    const u = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
-    S.usdc = parseFloat(ethers.utils.formatUnits(await u.balanceOf(S.acc), await u.decimals()));
-    if(S.usdc > S.peak) S.peak = S.usdc;
-    Core.save(); UI.updMetrics(); Core.recalc();
-  } catch(e) { deepLog('ERROR', 'Ошибка баланса', e); }
+    deepLog('INFO', '🔄 Обновление балансов...');
+    
+    // Баланс POL/MATIC
+    const maticBalance = await S.prov.getBalance(S.acc);
+    S.matic = parseFloat(ethers.utils.formatEther(maticBalance));
+    deepLog('INFO', `💰 POL/MATIC: ${S.matic.toFixed(4)}`);
+    
+    // Баланс USDC
+    const usdcContract = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
+    const decimals = await usdcContract.decimals();
+    const usdcBalance = await usdcContract.balanceOf(S.acc);
+    S.usdc = parseFloat(ethers.utils.formatUnits(usdcBalance, decimals));
+    deepLog('INFO', `💰 USDC: ${S.usdc.toFixed(2)}`);
+    
+    // Обновляем пик
+    if (S.usdc > S.peak) {
+      S.peak = S.usdc;
+      saveTrades();
+    }
+    
+    // Обновляем UI
+    UI.updMetrics();
+    Core.recalc();
+    
+    deepLog('SUCCESS', '✅ Балансы обновлены');
+    
+  } catch (error) {
+    deepLog('ERROR', `❌ Ошибка обновления балансов: ${error.message}`);
+    console.error('Refresh Error:', error);
+  }
 }
 
+// ============================================================
+// 🔍 СКАНИРОВАНИЕ РЫНКОВ
+// ============================================================
 async function scan() {
+  if (!S.con) {
+    deepLog('ERROR', '❌ Кошелек не подключен');
+    return;
+  }
+  
   S.sc++;
+  deepLog('INFO', `🔍 Сканирование #${S.sc}...`);
+  
   try {
     let data, retries = 0;
-    while(retries < CFG.MAX_RETRIES) {
+    
+    while (retries < CFG.MAX_RETRIES) {
       try {
-        const r = await fetch(CFG.API, {method:'GET', headers:{'Accept':'application/json'}, timeout:10000});
-        if(!r.ok) throw new Error(`HTTP ${r.status}`);
-        data = await r.json(); break;
-      } catch(fetchErr) { retries++; if(retries >= CFG.MAX_RETRIES) throw fetchErr; await new Promise(res => setTimeout(res, 2000)); }
+        const r = await fetch(CFG.API, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          timeout: 10000
+        });
+        
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        data = await r.json();
+        break;
+        
+      } catch (fetchErr) {
+        retries++;
+        if (retries >= CFG.MAX_RETRIES) throw fetchErr;
+        deepLog('WARN', `⚠️ Попытка ${retries}/${CFG.MAX_RETRIES}...`);
+        await new Promise(res => setTimeout(res, 2000));
+      }
     }
-    if(!data || !Array.isArray(data)) throw new Error('Invalid response');
     
-    deepLog('DEBUG', `API Ответ: ${data.length} рынков`, { sample: data[0] });
+    if (!data || !Array.isArray(data)) {
+      throw new Error('Некорректный ответ API');
+    }
     
-    const valid = data.filter(ev => { 
-      const m = ev.markets && ev.markets[0]; 
-      if(!m) return false; 
-      return Number(m.volume24h || m.volume24hr || 0) > 50; 
-    });
+    deepLog('DEBUG', `📊 Получено ${data.length} рынков`, { sample: data[0] });
     
-    UI.renderMarkets(valid);
-    UI.renderPositions(valid);
+    // Обновляем таблицы
+    UI.renderMarkets(data);
+    UI.renderPositions(data);
     
-    if(S.sc % CFG.CALIB_INT === 0) Core.recalc();
+    // Периодическая перекалибровка
+    if (S.sc % CFG.CALIB_INT === 0) {
+      Core.recalc();
+    }
     
-  } catch(e) { deepLog('ERROR', `API Error: ${e.message}`, e); }
+  } catch (error) {
+    deepLog('ERROR', `❌ Ошибка сканирования: ${error.message}`);
+    console.error('Scan Error:', error);
+  }
 }
 
 // ============================================================
-// 💹 TRADING FUNCTIONS
+// 💹 ТОРГОВЛЯ (ИСПРАВЛЕННАЯ)
 // ============================================================
-window.trade = async function(cid, oid, sz, title, type, tag, currentPrice) {
+window.trade = async function(cid, outcomeId, sz, title, type, tag) {
+  // 1. Проверяем подключение
+  if (!S.con || !S.signer || !S.acc) {
+    deepLog('ERROR', '❌ Кошелек не подключен! Подключите MetaMask.');
+    return;
+  }
+  
+  // 2. Проверяем валидность адреса
+  if (!S.acc || S.acc.length !== 42 || !S.acc.startsWith('0x')) {
+    deepLog('ERROR', `❌ Некорректный адрес кошелька: ${S.acc}`);
+    return;
+  }
+  
   const dry = document.getElementById('dry').checked;
-  const side = oid === 1 ? 'YES' : 'NO';
+  const side = outcomeId === 1 ? 'YES' : 'NO';
   
   deepLog('INFO', `📦 Попытка покупки ${side}: $${sz} (${type})`);
   
-  if(S.matic < CFG.MIN_MATIC) return deepLog('ERROR', '⚠️ Мало POL/MATIC для газа');
-  if(sz > S.usdc) return deepLog('ERROR', '❌ Недостаточно USDC');
-  if(Core.check()) return deepLog('ERROR', '🛑 Circuit Breaker активен');
-  
-  if(dry) {
+  // 3. Dry-Run режим
+  if (dry) {
     setTimeout(() => {
       const win = Math.random() > 0.48;
-      S.positions.push({ cid, outcomeId: oid, side, amount: sz, entryPrice: currentPrice, title, type, tag });
-      savePositions(); UI.renderPositions([]); UI.updMetrics();
-      deepLog('SUCCESS', `🧪 Dry: ${win?'WIN':'LOSS'}`);
+      Core.addTrade(win ? 'win' : 'loss', win ? sz * 0.7 : -sz);
+      deepLog('SUCCESS', `🧪 Dry: ${win ? 'WIN' : 'LOSS'}`);
     }, 500);
     return;
   }
-
+  
+  // 4. Проверка балансов
+  if (S.matic < CFG.MIN_MATIC) {
+    deepLog('ERROR', `⚠️ Мало POL/MATIC (мин. ${CFG.MIN_MATIC})`);
+    return;
+  }
+  
+  if (sz > S.usdc) {
+    deepLog('ERROR', '❌ Недостаточно USDC');
+    return;
+  }
+  
   try {
-    const u = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
+    // 5. Проверяем allowance USDC
+    deepLog('INFO', '🔑 Проверяю разрешение USDC...');
+    const usdcContract = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
     const amt = ethers.utils.parseUnits(sz.toString(), 6);
     
-    deepLog('INFO', '🔑 Проверяю разрешение USDC...');
-    const allow = await u.allowance(S.acc, CFG.CTF);
-    if(allow.lt(amt)) {
+    const allowance = await usdcContract.allowance(S.acc, CFG.CTF);
+    
+    if (allowance.lt(amt)) {
       deepLog('WARN', '🔑 Требуется Approve USDC');
-      const txApp = await u.approve(CFG.CTF, ethers.constants.MaxUint256, {gasLimit:100000});
-      await txApp.wait();
+      const txApprove = await usdcContract.approve(CFG.CTF, ethers.constants.MaxUint256, {
+        gasLimit: 100000
+      });
+      deepLog('INFO', `⏳ Ожидание подтверждения approve... TX: ${txApprove.hash.slice(0, 10)}...`);
+      await txApprove.wait();
       deepLog('SUCCESS', '✅ USDC Approved');
+    } else {
+      deepLog('INFO', '✅ Allowance достаточен');
     }
     
+    // 6. Выполняем покупку
     deepLog('INFO', '🌐 Подтвердите транзакцию в MetaMask...');
-    const c = new ethers.Contract(CFG.CTF, ABI_CTF, S.signer);
+    const ctfContract = new ethers.Contract(CFG.CTF, ABI_CTF, S.signer);
+    
+    // ✅ ИСПРАВЛЕНИЕ: Правильные параметры для buyShares
     const zero = ethers.BigNumber.from(0);
-    const amounts = oid === 1 ? [zero, amt] : [amt, zero];
-    const ids = [zero, ethers.BigNumber.from(1)];
+    const one = ethers.BigNumber.from(1);
+    const amounts = outcomeId === 1 ? [zero, amt] : [amt, zero];
+    const ids = [zero, one];
+    const referrer = ethers.constants.AddressZero; // 0x0000...000
     
-    const tx = await c.buyShares(cid, amounts, ids, amt, '0x0', {gasLimit: 300000});
-    deepLog('INFO', `⏳ TX отправлен: ${tx.hash.slice(0,10)}...`);
+    deepLog('DEBUG', '📋 Параметры транзакции', {
+      cid,
+      amounts: amounts.map(a => a.toString()),
+      ids: ids.map(i => i.toString()),
+      investment: amt.toString(),
+      referrer
+    });
     
-    const rec = await tx.wait();
-    deepLog('SUCCESS', `✅ Покупка успешна! TX: ${rec.transactionHash.slice(0,10)}...`);
+    const tx = await ctfContract.buyShares(
+      cid,
+      amounts,
+      ids,
+      amt,
+      referrer,
+      { gasLimit: 300000 }
+    );
     
-    S.positions.push({ cid, outcomeId: oid, side, amount: sz, entryPrice: currentPrice, title, type, tag });
+    deepLog('INFO', `⏳ TX отправлен: ${tx.hash.slice(0, 10)}...`);
+    const receipt = await tx.wait();
+    
+    deepLog('SUCCESS', `✅ Покупка успешна! TX: ${receipt.transactionHash.slice(0, 10)}...`);
+    
+    // 7. Сохраняем позицию
+    S.positions.push({
+      cid,
+      outcomeId,
+      side,
+      amount: sz,
+      entryPrice: outcomeId === 1 ? parseFloat(document.querySelector(`tr td:nth-child(3)`)?.textContent || 0.5) / 100 : (1 - parseFloat(document.querySelector(`tr td:nth-child(3)`)?.textContent || 0.5) / 100),
+      title,
+      type,
+      tag
+    });
     savePositions();
-    UI.renderPositions([]); UI.updMetrics();
+    UI.renderPositions([]);
+    UI.updMetrics();
     
-  } catch(e) { 
-    let msg = e.reason || e.message || 'Неизвестная ошибка';
-    if(e.code === 4001) msg = 'Транзакция отменена пользователем';
-    else if(e.data && e.data.message) msg = e.data.message;
+    // 8. Обновляем балансы
+    await refresh();
+    
+  } catch (error) {
+    let msg = error.message || 'Неизвестная ошибка';
+    
+    if (error.code === 4001) {
+      msg = 'Транзакция отменена пользователем';
+    } else if (error.code === 'INVALID_ARGUMENT') {
+      msg = `Ошибка параметров: ${error.message}`;
+    } else if (error.message.includes('insufficient funds')) {
+      msg = 'Недостаточно средств для газа';
+    }
+    
     deepLog('ERROR', `❌ Ошибка: ${msg}`);
-    console.error('Trade Error:', e);
+    console.error('Trade Error:', error);
   }
 };
 
+// ============================================================
+// 💸 ПРОДАЖА ПОЗИЦИЙ
+// ============================================================
 window.sellPos = async function(idx) {
   const pos = S.positions[idx];
-  if(!pos) return;
+  if (!pos) return;
+  
   const dry = document.getElementById('dry').checked;
-  
-  deepLog('INFO', `💰 Попытка продажи: ${pos.title} (${pos.side})`);
-  
-  if(dry) {
-    S.positions.splice(idx, 1); savePositions(); UI.renderPositions([]); UI.updMetrics();
-    deepLog('SUCCESS', '🧪 Dry Sale OK'); return;
+  if (dry) {
+    S.positions.splice(idx, 1);
+    savePositions();
+    UI.renderPositions([]);
+    UI.updMetrics();
+    deepLog('SUCCESS', '🧪 Dry Sale OK');
+    return;
   }
-
+  
+  if (!S.con || !S.signer) {
+    deepLog('ERROR', '❌ Кошелек не подключен');
+    return;
+  }
+  
   try {
-    const c = new ethers.Contract(CFG.CTF, ABI_CTF, S.signer);
+    deepLog('INFO', `💸 Продажа ${pos.side}: ${pos.title.slice(0, 30)}...`);
+    
+    const ctfContract = new ethers.Contract(CFG.CTF, ABI_CTF, S.signer);
     const amt = ethers.utils.parseUnits(pos.amount.toString(), 6);
     const zero = ethers.BigNumber.from(0);
+    const one = ethers.BigNumber.from(1);
     const amounts = pos.outcomeId === 1 ? [zero, amt] : [amt, zero];
-    const ids = [zero, ethers.BigNumber.from(1)];
+    const ids = [zero, one];
     
     deepLog('INFO', '🌐 Подтвердите продажу в MetaMask...');
-    const tx = await c.sellShares(pos.cid, amounts, ids, 0, '0x0', {gasLimit: 300000});
-    const rec = await tx.wait();
+    const tx = await ctfContract.sellShares(
+      pos.cid,
+      amounts,
+      ids,
+      0,
+      ethers.constants.AddressZero,
+      { gasLimit: 300000 }
+    );
     
-    deepLog('SUCCESS', `✅ Продажа успешна! TX: ${rec.transactionHash.slice(0,10)}...`);
-    S.positions.splice(idx, 1); savePositions(); UI.renderPositions([]); UI.updMetrics();
-  } catch(e) {
-    let msg = e.reason || e.message || 'Неизвестная ошибка';
-    if(e.code === 4001) msg = 'Транзакция отменена пользователем';
+    const receipt = await tx.wait();
+    deepLog('SUCCESS', `✅ Продажа успешна! TX: ${receipt.transactionHash.slice(0, 10)}...`);
+    
+    S.positions.splice(idx, 1);
+    savePositions();
+    UI.renderPositions([]);
+    UI.updMetrics();
+    await refresh();
+    
+  } catch (error) {
+    let msg = error.message || 'Неизвестная ошибка';
+    if (error.code === 4001) msg = 'Отменено пользователем';
     deepLog('ERROR', `❌ Ошибка продажи: ${msg}`);
-    console.error('Sell Error:', e);
+    console.error('Sell Error:', error);
   }
 };
 
-document.getElementById('b-sell-all').onclick = async function() {
-  if(!confirm('Продать все позиции с прибылью?')) return;
-  const profitable = [];
-  S.positions.forEach((pos, idx) => {
-    const pnl = (pos.entryPrice > 0.5 ? 1 - pos.entryPrice : pos.entryPrice) / pos.entryPrice;
-    if(pnl >= S.params.tp) profitable.push(idx);
-  });
+// ============================================================
+//  АВТОБОТ
+// ============================================================
+function startAuto() {
+  if (S.run) return;
+  S.run = true;
+  deepLog('INFO', '🚀 Автобот запущен');
+  document.getElementById('b-auto').disabled = true;
+  document.getElementById('b-stop').disabled = false;
   
-  for(let i = profitable.length - 1; i >= 0; i--) {
-    await window.sellPos(profitable[i]);
-  }
-};
+  refresh();
+  scan();
+  S.timer = setInterval(() => {
+    if (!S.run) return;
+    refresh();
+    scan();
+  }, CFG.SCAN_INT);
+}
+
+function stopAuto() {
+  S.run = false;
+  clearInterval(S.timer);
+  document.getElementById('b-auto').disabled = false;
+  document.getElementById('b-stop').disabled = true;
+  deepLog('INFO', '⏹ Автобот остановлен');
+}
 
 // ============================================================
-// 🚀 INITIALIZATION
+// 🚀 ИНИЦИАЛИЗАЦИЯ
 // ============================================================
-document.getElementById('b-con').onclick = connect;
-document.getElementById('b-scan').onclick = scan;
-document.getElementById('b-auto').onclick = () => { 
-  S.run=true; deepLog('INFO','🚀 Автобот запущен'); 
-  document.getElementById('b-auto').disabled=true; document.getElementById('b-stop').disabled=false;
-  refresh(); scan(); 
-  S.timer=setInterval(()=>{ if(!S.run)return; refresh(); scan(); }, CFG.SCAN_INT); 
-};
-document.getElementById('b-stop').onclick = () => { 
-  S.run=false; clearInterval(S.timer); 
-  document.getElementById('b-auto').disabled=false; document.getElementById('b-stop').disabled=true;
-  deepLog('INFO','⏹ Автобот остановлен'); 
-};
-document.getElementById('b-clear-pos').onclick = () => { if(confirm('Очистить все позиции?')) clearPositions(); };
-document.getElementById('b-reset').onclick = () => { 
-  if(confirm('Сбросить всю статистику и портфель?')){
-    localStorage.clear(); 
-    location.reload();
-  } 
-};
-
-Core.init(); UI.updMetrics(); Core.recalc();
-deepLog('INFO', '📦 POLYBOT v8.1.2 Ready. Жду подключения.');
+document.addEventListener('DOMContentLoaded', () => {
+  Core.init();
+  UI.updMetrics();
+  
+  // Обработчики кнопок
+  document.getElementById('b-con').onclick = connect;
+  document.getElementById('b-scan').onclick = scan;
+  document.getElementById('b-auto').onclick = startAuto;
+  document.getElementById('b-stop').onclick = stopAuto;
+  document.getElementById('b-reset').onclick = () => {
+    if (confirm('Сбросить всю статистику?')) {
+      localStorage.clear();
+      location.reload();
+    }
+  };
+  document.getElementById('b-clear-pos').onclick = () => {
+    if (confirm('Очистить все позиции?')) {
+      S.positions = [];
+      savePositions();
+      UI.renderPositions([]);
+      UI.updMetrics();
+      deepLog('INFO', '🗑 Портфель очищен');
+    }
+  };
+  
+  deepLog('INFO', '📦 POLYBOT v8.2.0 Ready. Жду подключения.');
+});
 </script>
 </body>
 </html>
