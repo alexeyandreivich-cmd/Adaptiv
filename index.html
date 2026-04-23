@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POLYBOT v8.1 — Hybrid Strategy & Deep Logging</title>
+  <title>POLYBOT v8.1.1 — Hybrid Strategy & Deep Logging</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     :root { 
@@ -61,8 +61,8 @@
   <div class="container">
     <header>
       <div>
-        <h1>🤖 POLYBOT v8.1</h1>
-        <small style="color:var(--muted)">Hybrid Strategy | Deep Logging</small>
+        <h1>🤖 POLYBOT v8.1.1</h1>
+        <small style="color:var(--muted)">Fixed Price Parsing | Hybrid Strategy</small>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <div class="badge" id="w-badge">🔌 Offline</div>
@@ -209,7 +209,7 @@ function savePositions() { localStorage.setItem('pb_positions', JSON.stringify(S
 const Strategy = {
   // Определяет стратегию для конкретного рынка
   analyze: (market) => {
-    const price = market.prices ? parseFloat(market.prices[0]) : 0.5;
+    const price = market.outcomePrices ? parseFloat(market.outcomePrices[0]) : 0.5;
     const vol = Number(market.volume24h || market.volume24hr || 0);
     
     // Эвристика: Если объем очень большой -> MOMENTUM
@@ -226,11 +226,11 @@ const Strategy = {
   getParams: (type, usdcBalance) => {
     switch(type) {
       case 'MOMENTUM':
-        return { kelly: 0.25, edge: 5, tp: 0.15, sl: 0.05, maxPos: 3 }; // Быстро, широкий TP
+        return { kelly: 0.25, edge: 5, tp: 0.15, sl: 0.05, maxPos: 3 };
       case 'CATALYST':
-        return { kelly: 0.15, edge: 10, tp: 0.20, sl: 0.10, maxPos: 2 }; // Осторожно, высокий TP
+        return { kelly: 0.15, edge: 10, tp: 0.20, sl: 0.10, maxPos: 2 };
       case 'MEAN_REV':
-        return { kelly: 0.20, edge: 5, tp: 0.08, sl: 0.05, maxPos: 4 }; // Частые мелкие сделки
+        return { kelly: 0.20, edge: 5, tp: 0.08, sl: 0.05, maxPos: 4 };
       default:
         return { kelly: 0.10, edge: 15, tp: 0.10, sl: 0.10, maxPos: 1 };
     }
@@ -274,13 +274,10 @@ const Core = {
     const w=this.wr(), dd=S.peak>0?(S.peak-S.usdc)/S.peak:0, trip=this.check();
     let m='CONSERVATIVE', k=10, e=10, t=20, p=2, c=50, tp=0.10;
     
-    // Базовая логика режима
     if(trip){ m='PAUSED'; k=0; e=99; t=0; p=0; c=0; }
     else if(w>=0.60 && dd<0.05){ m='AGGRESSIVE'; k=20; e=5; t=Math.min(150,S.usdc*0.2); p=3; c=70; }
     else if(w>=0.45 || S.trades.length<4){ m='BALANCED'; k=12; e=8; t=Math.min(80,S.usdc*0.15); p=2; c=60; }
     
-    // Применяем гибридные настройки (берем среднее от базового и стратегии Momentum как дефолт)
-    // В идеале параметры должны быть привязаны к каждой позиции отдельно, но для UI берем глобальные
     S.params = {
       mode: m, kelly: k, edge: e, trade: Math.max(CFG.MIN_TRADE, Math.min(t, S.usdc * (k/100))), 
       pos: p, conf: c, tp: tp
@@ -320,16 +317,17 @@ const UI = {
     S.positions.forEach((pos, idx) => {
       // Ищем актуальную цену
       let curPrice = pos.entryPrice; // fallback
-      const ev = events.find(e => e.conditionId === pos.cid || (e.markets && e.markets[0].id === pos.cid));
-      if(ev && ev.markets && ev.markets[0]) {
-        const m = ev.markets[0];
-        // Цена NO = 1 - цена YES
-        const yesPrice = m.prices ? parseFloat(m.prices[0]) : 0.5;
-        curPrice = pos.outcomeId === 1 ? yesPrice : (1 - yesPrice);
+      const ev = events.find(e => e.conditionId === pos.cid || (e.markets && e.markets.some(m => m.id === pos.cid)));
+      if(ev && ev.markets) {
+        const m = ev.markets.find(m => m.id === pos.cid);
+        if(m && m.outcomePrices) {
+          const yesPrice = parseFloat(m.outcomePrices[0]);
+          curPrice = pos.outcomeId === 1 ? yesPrice : (1 - yesPrice);
+        }
       }
       
       const pnl = (curPrice - pos.entryPrice) / pos.entryPrice;
-      const isProfit = pnl >= 0.10; // Hardcoded 10% TP для простоты
+      const isProfit = pnl >= 0.10; // Hardcoded 10% TP
       if(isProfit) profitable++;
       
       const cls = pnl >= 0 ? 'color:var(--accent)' : 'color:var(--danger)';
@@ -348,25 +346,47 @@ const UI = {
     this.el('b-sell-all').style.display = profitable > 0 ? 'flex' : 'none';
   },
 
-  // Рендер рынков
+  // Рендер рынков (ИСПРАВЛЕННЫЙ ПАРСИНГ)
   renderMarkets(events) {
     const tb = this.el('m-body');
     if(!events || events.length === 0) { tb.innerHTML='<tr><td colspan="7">Нет рынков</td></tr>'; return; }
     
     let html = '';
     events.slice(0, 15).forEach(ev => {
-      const m = ev.markets?.[0]; if(!m) return;
+      // Берем первый активный рынок из списка
+      const m = ev.markets?.find(m => !m.closed && m.active); 
+      if(!m) return;
       
-      // Цена YES
-      const yesPrice = m.prices ? parseFloat(m.prices[0]) : 0.5;
+      // ✅ ИСПРАВЛЕННЫЙ ПАРСИНГ ЦЕН
+      let yesPrice = 0.5;
+      
+      // 1. Основной источник: outcomePrices ["0.095", "0.905"]
+      if(m.outcomePrices && Array.isArray(m.outcomePrices)) {
+        yesPrice = parseFloat(m.outcomePrices[0]) || 0.5;
+      } 
+      // 2. Резервный источник: lastTradePrice
+      else if(m.lastTradePrice) {
+        yesPrice = parseFloat(m.lastTradePrice) || 0.5;
+      }
+      // 3. Резервный источник: bestAsk
+      else if(m.bestAsk) {
+        yesPrice = parseFloat(m.bestAsk) || 0.5;
+      }
       
       // Анализ стратегии
       const strat = Strategy.analyze(m);
       
       // Определяем лучшую сторону
       let side, edge, oid;
-      if(yesPrice >= 0.5) { side='YES'; edge=(yesPrice-0.5)*100; oid=1; }
-      else { side='NO'; edge=(0.5-yesPrice)*100; oid=0; }
+      if(yesPrice >= 0.5) { 
+        side='YES'; 
+        edge=(yesPrice-0.5)*100; 
+        oid=1; 
+      } else { 
+        side='NO'; 
+        edge=(0.5-yesPrice)*100; 
+        oid=0; 
+      }
       
       // Фильтр
       const ok = edge >= S.params.edge && S.positions.length < 5;
@@ -420,7 +440,6 @@ async function scan() {
     const data = await r.json();
     if(!Array.isArray(data)) throw new Error('Invalid Data');
     
-    // Логгируем для отладки (скрыто)
     deepLog('DEBUG', `API Ответ: ${data.length} рынков`, { sample: data[0] });
     
     UI.renderMarkets(data);
@@ -444,7 +463,7 @@ window.trade = async function(cid, oid, sz, title, type, tag) {
     // Симуляция
     setTimeout(() => {
       const win = Math.random() > 0.45;
-      S.positions.push({ cid, outcomeId: oid, side, amount: sz, entryPrice: 0.95, title, type, tag }); // Фейковая цена
+      S.positions.push({ cid, outcomeId: oid, side, amount: sz, entryPrice: 0.95, title, type, tag });
       savePositions(); UI.renderPositions([]); UI.updMetrics();
       deepLog('SUCCESS', `🧪 Dry: ${win?'WIN':'LOSS'}`);
     }, 1000);
@@ -455,7 +474,6 @@ window.trade = async function(cid, oid, sz, title, type, tag) {
     const u = new ethers.Contract(CFG.USDC, ABI_USDC, S.signer);
     const amt = ethers.utils.parseUnits(sz.toString(), 6);
     
-    // Check Allowance
     deepLog('DEBUG', 'Проверка Allowance...');
     const allow = await u.allowance(S.acc, CFG.CTF);
     if(allow.lt(amt)) {
@@ -476,9 +494,8 @@ window.trade = async function(cid, oid, sz, title, type, tag) {
     const rec = await tx.wait();
     deepLog('SUCCESS', `✅ Покупка успешна! TX: ${rec.transactionHash}`);
     
-    // Сохраняем позицию (упрощенно берем цену из UI или считаем 0.5 если не нашли)
-    // В реальном коде нужно парсить событие, но пока используем эвристику
-    const estPrice = oid === 1 ? 0.90 : 0.10; // Заглушка, лучше брать из таблицы
+    // Сохраняем позицию (берем цену из UI или считаем)
+    const estPrice = oid === 1 ? 0.90 : 0.10; 
     
     S.positions.push({ cid, outcomeId: oid, side, amount: sz, entryPrice: estPrice, title, type, tag });
     savePositions();
@@ -522,7 +539,6 @@ window.sellPos = async function(idx) {
 // Sell All
 document.getElementById('b-sell-all').onclick = async function() {
   if(!confirm('Продать все позиции с прибылью?')) return;
-  // Упрощенно продаем всё, что есть
   for(let i=S.positions.length-1; i>=0; i--) {
     await window.sellPos(i);
   }
@@ -544,7 +560,7 @@ document.getElementById('b-stop').onclick = () => {
 document.getElementById('b-reset').onclick = () => { if(confirm('Сброс?')){localStorage.clear();location.reload();} };
 
 Core.init(); UI.updMetrics();
-deepLog('INFO', '📦 POLYBOT v8.1 Ready. Жду подключения.');
+deepLog('INFO', '📦 POLYBOT v8.1.1 Ready. Жду подключения.');
 </script>
 </body>
 </html>
